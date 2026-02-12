@@ -91,22 +91,10 @@ if (-Not $SkipUpload) {
 
 # Execute deployment on server
 Write-Host "`n[5/7] Setting up directories on server..." -ForegroundColor Yellow
-Write-Host "  Note: You'll be prompted for sudo password several times" -ForegroundColor Yellow
+Write-Host "  Note: You'll be prompted for sudo password" -ForegroundColor Yellow
 
-# Move files
-ssh $SERVER "echo '  -> Moving files to /opt/stack/'; sudo mv /tmp/asl-ml-server /opt/stack/ 2>/dev/null || true; sudo chown -R bilgin:bilgin /opt/stack/asl-ml-server"
-
-# Create directories
-ssh $SERVER "echo '  -> Creating directories'; sudo mkdir -p /opt/stack/config/asl-ml-api /opt/stack/data/asl-ml-api/logs /opt/stack/data/asl-postgres /opt/stack/ai-models"
-
-# Set permissions
-ssh $SERVER "echo '  -> Setting permissions'; sudo chown -R bilgin:bilgin /opt/stack/config/asl-ml-api /opt/stack/data/asl-ml-api /opt/stack/ai-models"
-
-# Copy init script
-ssh $SERVER "echo '  -> Copying init script'; cp /opt/stack/asl-ml-server/init-db.sql /opt/stack/config/asl-ml-api/"
-
-# Move model if exists
-ssh $SERVER "if [ -f /tmp/rf_asl_15letters.pkl ]; then echo '  -> Moving model to ai-models/'; sudo mv /tmp/rf_asl_15letters.pkl /opt/stack/ai-models/; sudo chown bilgin:bilgin /opt/stack/ai-models/rf_asl_15letters.pkl; fi"
+# Combined setup command (one sudo password prompt)
+ssh -t $SERVER "echo '  -> Moving files to /opt/stack/'; sudo bash -c 'mv /tmp/asl-ml-server /opt/stack/ 2>/dev/null || true; chown -R bilgin:bilgin /opt/stack/asl-ml-server; echo \"  -> Creating directories\"; mkdir -p /opt/stack/config/asl-ml-api /opt/stack/data/asl-ml-api/logs /opt/stack/data/asl-postgres /opt/stack/ai-models; echo \"  -> Setting permissions\"; chown -R bilgin:bilgin /opt/stack/config/asl-ml-api /opt/stack/data/asl-ml-api /opt/stack/ai-models; if [ -f /tmp/rf_asl_15letters.pkl ]; then echo \"  -> Moving model to ai-models/\"; mv /tmp/rf_asl_15letters.pkl /opt/stack/ai-models/; chown bilgin:bilgin /opt/stack/ai-models/rf_asl_15letters.pkl; fi' && echo '  -> Copying init script' && cp /opt/stack/asl-ml-server/init-db.sql /opt/stack/config/asl-ml-api/"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  [ERROR] Setup failed" -ForegroundColor Red
@@ -118,14 +106,8 @@ Write-Host "  [OK] Setup complete" -ForegroundColor Green
 Write-Host "`n[6/7] Building and starting containers..." -ForegroundColor Yellow
 Write-Host "  This may take 2-3 minutes..." -ForegroundColor Yellow
 
-# Build container
-ssh $SERVER "cd /opt/stack && echo '  -> Building asl-ml-api container' && sudo docker compose build asl-ml-api"
-
-# Start services
-ssh $SERVER "cd /opt/stack && echo '  -> Starting services' && sudo docker compose up -d asl-postgres asl-ml-api"
-
-# Wait for startup
-ssh $SERVER "echo '  -> Waiting for services to start...' && sleep 5"
+# Build and start (one sudo session)
+ssh -t $SERVER "cd /opt/stack && echo '  -> Building asl-ml-api container' && sudo docker compose build asl-ml-api && echo '  -> Starting services' && sudo docker compose up -d asl-postgres asl-ml-api && echo '  -> Waiting for services to start...' && sleep 5"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  [ERROR] Container startup failed" -ForegroundColor Red
