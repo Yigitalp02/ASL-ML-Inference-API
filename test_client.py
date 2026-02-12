@@ -10,7 +10,7 @@ import time
 from typing import List
 
 # API URL (change as needed)
-API_URL = "http://192.168.50.100:8100"  # or "https://asl.ybilgin.com"
+API_URL = "http://192.168.50.100:8200"  # or "https://asl.ybilgin.com"
 
 # Sample sensor data for different letters
 SAMPLE_DATA = {

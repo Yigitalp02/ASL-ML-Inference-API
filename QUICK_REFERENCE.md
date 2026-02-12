@@ -8,19 +8,19 @@ One-page cheat sheet for ASL ML API.
 
 ```bash
 # Health check
-GET http://192.168.50.100:8100/health
+GET http://192.168.50.100:8200/health
 GET https://asl.ybilgin.com/health
 
 # Predict letter
-POST http://192.168.50.100:8100/predict
+POST http://192.168.50.100:8200/predict
 POST https://asl.ybilgin.com/predict
 Body: {"flex_sensors": [512.3, 678.1, 345.9, 890.2, 234.5]}
 
 # Statistics
-GET http://192.168.50.100:8100/stats
+GET http://192.168.50.100:8200/stats
 
 # Interactive docs
-GET http://192.168.50.100:8100/docs
+GET http://192.168.50.100:8200/docs
 ```
 
 ---
@@ -105,7 +105,7 @@ sudo docker compose up -d asl-ml-api
 
 ```bash
 # Test script (bash)
-./test_api.sh http://192.168.50.100:8100
+./test_api.sh http://192.168.50.100:8200
 
 # Test client (Python)
 python test_client.py
@@ -114,7 +114,7 @@ python test_client.py
 python test_client.py --load 100
 
 # Manual curl test
-curl -X POST http://192.168.50.100:8100/predict \
+curl -X POST http://192.168.50.100:8200/predict \
   -H "Content-Type: application/json" \
   -d '{"flex_sensors": [512.3, 678.1, 345.9, 890.2, 234.5]}'
 ```
@@ -149,7 +149,7 @@ sudo docker compose exec asl-postgres pg_dump -U asl_user asl_predictions > back
 3. Add hostname:
    - Subdomain: `asl`
    - Domain: `ybilgin.com`
-   - Service: `http://192.168.50.100:8100`
+   - Service: `http://192.168.50.100:8200`
 4. Test: `curl https://asl.ybilgin.com/health`
 
 ---
@@ -164,7 +164,7 @@ sudo docker compose ps
 sudo docker compose logs --tail=50 asl-ml-api
 
 # Check health
-curl http://192.168.50.100:8100/health
+curl http://192.168.50.100:8200/health
 
 # Restart everything
 sudo docker compose restart asl-postgres asl-ml-api
@@ -193,7 +193,7 @@ sudo docker compose exec asl-postgres psql -U asl_user -d asl_predictions -c \
   "SELECT pg_size_pretty(pg_database_size('asl_predictions'));"
 
 # Prediction count
-curl http://192.168.50.100:8100/stats | jq '.total_predictions'
+curl http://192.168.50.100:8200/stats | jq '.total_predictions'
 ```
 
 ---
@@ -229,9 +229,9 @@ To improve:
 
 **Logs**: `sudo docker compose logs -f asl-ml-api`
 
-**Docs**: `http://192.168.50.100:8100/docs`
+**Docs**: `http://192.168.50.100:8200/docs`
 
-**Health**: `curl http://192.168.50.100:8100/health`
+**Health**: `curl http://192.168.50.100:8200/health`
 
 ---
 

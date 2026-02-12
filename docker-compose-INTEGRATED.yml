@@ -1,0 +1,89 @@
+# =============================================================================
+# ASL ML API - READY TO ADD TO /opt/stack/docker-compose.yml
+# =============================================================================
+# 
+# INSTALLATION:
+# 1. Copy the services below
+# 2. Add to your /opt/stack/docker-compose.yml under "services:"
+# 3. They will use your existing networks (proxy-net, data-net)
+# 
+# RAM USAGE: ~200MB total (0.2GB - very light!)
+# =============================================================================
+
+  # -------------------------------------------------------
+  # ASL ML API - PostgreSQL Database
+  # -------------------------------------------------------
+  asl-postgres:
+    image: postgres:16-alpine
+    container_name: asl-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: asl_predictions
+      POSTGRES_USER: asl_user
+      POSTGRES_PASSWORD: asl_secure_password_change_me  # <--- CHANGE THIS!
+    volumes:
+      - /opt/stack/data/asl-postgres:/var/lib/postgresql/data
+      - /opt/stack/config/asl-ml-api/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - data-net  # Using your existing network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U asl_user -d asl_predictions"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'      # Very light on CPU
+          memory: 128M     # Only 128MB RAM!
+
+  # -------------------------------------------------------
+  # ASL ML API - FastAPI Inference Server
+  # -------------------------------------------------------
+  asl-ml-api:
+    build:
+      context: /opt/stack/asl-ml-server
+      dockerfile: Dockerfile
+    container_name: asl-ml-api
+    restart: unless-stopped
+    ports:
+      - "8200:8000"  # Port 8200 (8100 was taken by Minecraft)
+    environment:
+      - MODEL_PATH=/models/rf_asl_15letters.pkl
+      - POSTGRES_HOST=asl-postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=asl_predictions
+      - POSTGRES_USER=asl_user
+      - POSTGRES_PASSWORD=asl_secure_password_change_me  # <--- SAME PASSWORD!
+    volumes:
+      - /opt/stack/ai-models:/models:ro  # Reuse your existing ai-models folder!
+      - /opt/stack/data/asl-ml-api/logs:/app/logs
+    depends_on:
+      asl-postgres:
+        condition: service_healthy
+    networks:
+      - proxy-net  # For Cloudflare Tunnel access
+      - data-net   # For database access
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'      # Half a CPU core (very light)
+          memory: 256M     # Only 256MB RAM! (10x less than Code-server)
+
+# =============================================================================
+# TOTAL RESOURCE USAGE:
+# - RAM: 384MB (128MB + 256MB)
+# - CPU: 1.0 cores (0.5 + 0.5)
+# 
+# COMPARISON:
+# - Your LLAMA AI: 8,000 MB + 3.5 CPUs 🔥
+# - Your Jellyfin: 2,000 MB + 2.0 CPUs
+# - ASL ML API:      384 MB + 1.0 CPUs ✅ (20x lighter than LLAMA!)
+# =============================================================================
+

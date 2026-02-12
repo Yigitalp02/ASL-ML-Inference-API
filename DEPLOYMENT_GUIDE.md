@@ -21,7 +21,7 @@ Complete guide to deploy the ASL ML Inference API on your home server.
 2. **asl-postgres**: PostgreSQL database for logging
 
 **External Access:**
-- Local: `http://192.168.50.100:8100`
+- Local: `http://192.168.50.100:8200`
 - Public: `https://asl.ybilgin.com` (via Cloudflare Tunnel)
 
 **Features:**
@@ -196,10 +196,10 @@ INFO:     Application startup complete.
 sudo docker compose ps
 
 # Check API health
-curl http://192.168.50.100:8100/health
+curl http://192.168.50.100:8200/health
 
 # Test prediction endpoint
-curl -X POST http://192.168.50.100:8100/predict \
+curl -X POST http://192.168.50.100:8200/predict \
   -H "Content-Type: application/json" \
   -d '{"flex_sensors": [512.3, 678.1, 345.9, 890.2, 234.5]}'
 ```
@@ -230,7 +230,7 @@ Expected response:
    - **Domain**: `ybilgin.com`
    - **Service**: 
      - Type: `HTTP`
-     - URL: `192.168.50.100:8100`
+     - URL: `192.168.50.100:8200`
 
 5. **Save**
 
@@ -298,7 +298,7 @@ Edit `src-tauri/src/main.rs`:
 let api_url = "https://asl.ybilgin.com/predict";
 
 // Option 2: Use local API (when on home network)
-let api_url = "http://192.168.50.100:8100/predict";
+let api_url = "http://192.168.50.100:8200/predict";
 
 // Option 3: Try cloud, fallback to local Python
 // (implement fallback logic)
@@ -435,8 +435,8 @@ Expected performance on your hardware (i7-4700HQ, 16GB RAM):
 ## 🎉 Success Checklist
 
 - [ ] Services running: `sudo docker compose ps`
-- [ ] Health check passes: `curl http://192.168.50.100:8100/health`
-- [ ] Prediction works locally: `curl -X POST http://192.168.50.100:8100/predict ...`
+- [ ] Health check passes: `curl http://192.168.50.100:8200/health`
+- [ ] Prediction works locally: `curl -X POST http://192.168.50.100:8200/predict ...`
 - [ ] External access works: `curl https://asl.ybilgin.com/health`
 - [ ] Swagger docs accessible: `https://asl.ybilgin.com/docs`
 - [ ] Database logging works: `sudo docker compose exec asl-postgres psql ...`

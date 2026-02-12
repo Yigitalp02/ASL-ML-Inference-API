@@ -96,7 +96,7 @@ docker compose up -d asl-ml-api asl-postgres
 docker compose logs -f asl-ml-api
 
 # Test
-curl http://localhost:8100/health
+curl http://localhost:8200/health
 ```
 
 ---
@@ -229,13 +229,13 @@ Supported model files:
 ### Health Check
 
 ```bash
-curl http://localhost:8100/health
+curl http://localhost:8200/health
 ```
 
 ### Test Prediction
 
 ```bash
-curl -X POST http://localhost:8100/predict \
+curl -X POST http://localhost:8200/predict \
   -H "Content-Type: application/json" \
   -d '{
     "flex_sensors": [512.3, 678.1, 345.9, 890.2, 234.5],
@@ -251,7 +251,7 @@ sudo apt install apache2-utils
 
 # Run load test (1000 requests, 10 concurrent)
 ab -n 1000 -c 10 -p test-payload.json -T application/json \
-  http://localhost:8100/predict
+  http://localhost:8200/predict
 ```
 
 ---

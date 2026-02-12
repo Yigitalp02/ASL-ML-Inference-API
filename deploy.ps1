@@ -151,7 +151,7 @@ Write-Host "`n[7/7] Testing API..." -ForegroundColor Yellow
 Start-Sleep -Seconds 3
 
 try {
-    $response = Invoke-RestMethod -Uri "http://${ServerIP}:8100/health" -Method Get -TimeoutSec 10
+    $response = Invoke-RestMethod -Uri "http://${ServerIP}:8200/health" -Method Get -TimeoutSec 10
     Write-Host "  ✓ API is responding" -ForegroundColor Green
     Write-Host ""
     Write-Host "  Status: $($response.status)" -ForegroundColor Green
@@ -166,13 +166,13 @@ Write-Host "`n==========================================" -ForegroundColor Cyan
 Write-Host "Deployment Complete!" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Local API:  http://${ServerIP}:8100" -ForegroundColor Green
+Write-Host "Local API:  http://${ServerIP}:8200" -ForegroundColor Green
 Write-Host "Public API: https://asl.ybilgin.com" -ForegroundColor Green
-Write-Host "API Docs:   http://${ServerIP}:8100/docs" -ForegroundColor Green
+Write-Host "API Docs:   http://${ServerIP}:8200/docs" -ForegroundColor Green
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Yellow
 Write-Host "  1. Configure Cloudflare Tunnel (see DEPLOYMENT_GUIDE.md)" -ForegroundColor White
-Write-Host "  2. Test prediction: curl -X POST http://${ServerIP}:8100/predict ..." -ForegroundColor White
+Write-Host "  2. Test prediction: curl -X POST http://${ServerIP}:8200/predict ..." -ForegroundColor White
 Write-Host "  3. Update desktop app to use API endpoint" -ForegroundColor White
 Write-Host ""
 Write-Host "View logs:" -ForegroundColor Yellow
