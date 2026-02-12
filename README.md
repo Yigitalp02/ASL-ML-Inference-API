@@ -1,26 +1,26 @@
-# 🤖 ASL ML Inference API
+# ASL ML Inference API
 
 Fast, scalable ML inference server for real-time American Sign Language recognition.
 
 ---
 
-## 🎯 Overview
+## Overview
 
 This is a production-ready FastAPI service that provides real-time sign language predictions from IoT glove sensor data. Designed for low-latency (<50ms) inference with automatic logging and analytics.
 
 ### Features
 
-- ⚡ **Fast**: <50ms prediction latency
-- 📊 **Logging**: Automatic prediction storage in PostgreSQL
-- 📈 **Analytics**: Built-in statistics endpoints
-- 🔒 **Secure**: Non-root container, CORS configured
-- 🐳 **Containerized**: Docker Compose ready
-- 📚 **Documented**: Auto-generated Swagger/ReDoc docs
-- 💪 **Production Ready**: Health checks, graceful shutdown, error handling
+- **Fast**: <50ms prediction latency
+- **Logging**: Automatic prediction storage in PostgreSQL
+- **Analytics**: Built-in statistics endpoints
+- **Secure**: Non-root container, CORS configured
+- **Containerized**: Docker Compose ready
+- **Documented**: Auto-generated Swagger/ReDoc docs
+- **Production Ready**: Health checks, graceful shutdown, error handling
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 ┌─────────────┐      ┌──────────────┐      ┌─────────────┐
@@ -36,7 +36,7 @@ This is a production-ready FastAPI service that provides real-time sign language
 
 ---
 
-## 📦 Project Structure
+## Project Structure
 
 ```
 asl-ml-server/
@@ -52,7 +52,7 @@ asl-ml-server/
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -101,7 +101,7 @@ curl http://localhost:8200/health
 
 ---
 
-## 📡 API Endpoints
+## API Endpoints
 
 ### POST /predict
 
@@ -175,7 +175,7 @@ API information and available endpoints.
 
 ---
 
-## 🔧 Configuration
+## Configuration
 
 ### Environment Variables
 
@@ -202,7 +202,7 @@ Supported model files:
 
 ---
 
-## 📊 Database Schema
+## Database Schema
 
 ### Table: predictions
 
@@ -224,7 +224,7 @@ Supported model files:
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ### Health Check
 
@@ -256,7 +256,7 @@ ab -n 1000 -c 10 -p test-payload.json -T application/json \
 
 ---
 
-## 📈 Performance
+## Performance
 
 Benchmarked on i7-4700HQ, 16GB RAM:
 
@@ -268,14 +268,14 @@ Benchmarked on i7-4700HQ, 16GB RAM:
 
 ---
 
-## 🔐 Security
+## Security
 
-- ✅ Non-root container user
-- ✅ Read-only model mount
-- ✅ CORS configured
-- ✅ Input validation (Pydantic)
-- ✅ SQL injection protection (parameterized queries)
-- ✅ No secrets in code (environment variables)
+- Non-root container user
+- Read-only model mount
+- CORS configured
+- Input validation (Pydantic)
+- SQL injection protection (parameterized queries)
+- No secrets in code (environment variables)
 
 **Production Recommendations:**
 - Use strong database password
@@ -286,7 +286,7 @@ Benchmarked on i7-4700HQ, 16GB RAM:
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Model Not Loading
 
@@ -322,7 +322,7 @@ docker compose logs -f asl-ml-api
 
 ---
 
-## 🔄 Updates
+## Updates
 
 ### Update Model
 
@@ -349,7 +349,7 @@ docker compose up -d asl-ml-api
 
 ---
 
-## 🤝 Integration
+## Integration
 
 ### Desktop App (Tauri/Rust)
 
@@ -396,13 +396,13 @@ print(f"Predicted: {result['letter']} (confidence: {result['confidence']})")
 
 ---
 
-## 📝 License
+## License
 
 Same as parent project.
 
 ---
 
-## 🙏 Credits
+## Credits
 
 - Built with [FastAPI](https://fastapi.tiangolo.com/)
 - ML models trained with [scikit-learn](https://scikit-learn.org/)
