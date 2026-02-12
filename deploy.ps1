@@ -47,7 +47,7 @@ if (-Not (Test-Path $MODEL_PATH)) {
     Write-Host "Deployment will continue, but you need to upload the model manually." -ForegroundColor Yellow
     $MODEL_EXISTS = $false
 } else {
-    Write-Host "  ✓ Model found: $MODEL_PATH" -ForegroundColor Green
+    Write-Host "  [OK] Model found: $MODEL_PATH" -ForegroundColor Green
     $MODEL_EXISTS = $true
 }
 
@@ -55,9 +55,9 @@ if (-Not (Test-Path $MODEL_PATH)) {
 Write-Host "`n[2/7] Testing SSH connection to $SERVER..." -ForegroundColor Yellow
 try {
     ssh -o ConnectTimeout=5 $SERVER "echo 'Connection successful'" | Out-Null
-    Write-Host "  ✓ SSH connection successful" -ForegroundColor Green
+    Write-Host "  [OK] SSH connection successful" -ForegroundColor Green
 } catch {
-    Write-Host "  ✗ SSH connection failed" -ForegroundColor Red
+    Write-Host "  [ERROR] SSH connection failed" -ForegroundColor Red
     Write-Host "  Please check your SSH access to the server." -ForegroundColor Red
     exit 1
 }
@@ -67,20 +67,20 @@ if (-Not $SkipUpload) {
     Write-Host "`n[3/7] Uploading project files..." -ForegroundColor Yellow
     scp -r "$SCRIPT_DIR" "${SERVER}:/tmp/asl-ml-server"
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "  ✗ Upload failed" -ForegroundColor Red
+        Write-Host "  [ERROR] Upload failed" -ForegroundColor Red
         exit 1
     }
-    Write-Host "  ✓ Files uploaded to /tmp/asl-ml-server" -ForegroundColor Green
+    Write-Host "  [OK] Files uploaded to /tmp/asl-ml-server" -ForegroundColor Green
 
     # Upload model if exists
     if ($MODEL_EXISTS) {
         Write-Host "`n[4/7] Uploading ML model..." -ForegroundColor Yellow
         scp "$MODEL_PATH" "${SERVER}:/tmp/rf_asl_15letters.pkl"
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "  ✗ Model upload failed" -ForegroundColor Red
+            Write-Host "  [ERROR] Model upload failed" -ForegroundColor Red
             exit 1
         }
-        Write-Host "  ✓ Model uploaded" -ForegroundColor Green
+        Write-Host "  [OK] Model uploaded" -ForegroundColor Green
     } else {
         Write-Host "`n[4/7] Skipping model upload (not found)" -ForegroundColor Yellow
     }
@@ -119,10 +119,10 @@ ssh $SERVER @"
 "@
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "  ✗ Setup failed" -ForegroundColor Red
+    Write-Host "  [ERROR] Setup failed" -ForegroundColor Red
     exit 1
 }
-Write-Host "  ✓ Setup complete" -ForegroundColor Green
+Write-Host "  [OK] Setup complete" -ForegroundColor Green
 
 # Build and start containers
 Write-Host "`n[6/7] Building and starting containers..." -ForegroundColor Yellow
@@ -141,10 +141,10 @@ ssh $SERVER @"
 "@
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "  ✗ Container startup failed" -ForegroundColor Red
+    Write-Host "  [ERROR] Container startup failed" -ForegroundColor Red
     exit 1
 }
-Write-Host "  ✓ Containers started" -ForegroundColor Green
+Write-Host "  [OK] Containers started" -ForegroundColor Green
 
 # Test the API
 Write-Host "`n[7/7] Testing API..." -ForegroundColor Yellow
@@ -152,7 +152,7 @@ Start-Sleep -Seconds 3
 
 try {
     $response = Invoke-RestMethod -Uri "http://${ServerIP}:8200/health" -Method Get -TimeoutSec 10
-    Write-Host "  ✓ API is responding" -ForegroundColor Green
+    Write-Host "  [OK] API is responding" -ForegroundColor Green
     Write-Host ""
     Write-Host "  Status: $($response.status)" -ForegroundColor Green
     Write-Host "  Model: $($response.model_name)" -ForegroundColor Green
@@ -160,7 +160,7 @@ try {
     $dbColor = if ($response.database_connected) { "Green" } else { "Yellow" }
     Write-Host "  Database: $dbStatus" -ForegroundColor $dbColor
 } catch {
-    Write-Host "  ✗ API health check failed" -ForegroundColor Red
+    Write-Host "  [ERROR] API health check failed" -ForegroundColor Red
     Write-Host "  Check logs: ssh $SERVER `"sudo docker compose logs -f asl-ml-api`"" -ForegroundColor Yellow
 }
 
