@@ -93,26 +93,26 @@ if (-Not $SkipUpload) {
 Write-Host "`n[5/7] Setting up directories on server..." -ForegroundColor Yellow
 ssh $SERVER @"
     set -e
-    echo '  → Moving files to /opt/stack/'
+    echo '  -> Moving files to /opt/stack/'
     sudo mv /tmp/asl-ml-server /opt/stack/ || true
     sudo chown -R bilgin:bilgin /opt/stack/asl-ml-server
 
-    echo '  → Creating directories'
+    echo '  -> Creating directories'
     sudo mkdir -p /opt/stack/config/asl-ml-api
     sudo mkdir -p /opt/stack/data/asl-ml-api/logs
     sudo mkdir -p /opt/stack/data/asl-postgres
     sudo mkdir -p /opt/stack/ai-models
 
-    echo '  → Setting permissions'
+    echo '  -> Setting permissions'
     sudo chown -R bilgin:bilgin /opt/stack/config/asl-ml-api
     sudo chown -R bilgin:bilgin /opt/stack/data/asl-ml-api
     sudo chown -R bilgin:bilgin /opt/stack/ai-models
 
-    echo '  → Copying init script'
+    echo '  -> Copying init script'
     cp /opt/stack/asl-ml-server/init-db.sql /opt/stack/config/asl-ml-api/
 
     if [ -f /tmp/rf_asl_15letters.pkl ]; then
-        echo '  → Moving model to ai-models/'
+        echo '  -> Moving model to ai-models/'
         sudo mv /tmp/rf_asl_15letters.pkl /opt/stack/ai-models/
         sudo chown bilgin:bilgin /opt/stack/ai-models/rf_asl_15letters.pkl
     fi
@@ -130,13 +130,13 @@ ssh $SERVER @"
     set -e
     cd /opt/stack
     
-    echo '  → Building asl-ml-api container'
+    echo '  -> Building asl-ml-api container'
     sudo docker compose build asl-ml-api
     
-    echo '  → Starting services'
+    echo '  -> Starting services'
     sudo docker compose up -d asl-postgres asl-ml-api
     
-    echo '  → Waiting for services to start...'
+    echo '  -> Waiting for services to start...'
     sleep 5
 "@
 
