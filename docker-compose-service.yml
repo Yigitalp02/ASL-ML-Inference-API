@@ -1,0 +1,63 @@
+# Add this to your /opt/stack/docker-compose.yml file
+# 
+# This defines two services:
+# 1. asl-ml-api: FastAPI inference server
+# 2. asl-postgres: PostgreSQL for logging predictions
+
+services:
+  # PostgreSQL database for ASL predictions
+  asl-postgres:
+    image: postgres:16-alpine
+    container_name: asl-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: asl_predictions
+      POSTGRES_USER: asl_user
+      POSTGRES_PASSWORD: ${ASL_DB_PASSWORD:-change_me_in_production}
+    volumes:
+      - /opt/stack/data/asl-postgres:/var/lib/postgresql/data
+      - /opt/stack/config/asl-ml-api/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - stack-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U asl_user -d asl_predictions"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ASL ML Inference API
+  asl-ml-api:
+    build:
+      context: /opt/stack/asl-ml-server
+      dockerfile: Dockerfile
+    container_name: asl-ml-api
+    restart: unless-stopped
+    ports:
+      - "8100:8000"  # Exposed on 192.168.50.100:8100
+    environment:
+      - MODEL_PATH=/models/rf_asl_15letters.pkl
+      - POSTGRES_HOST=asl-postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=asl_predictions
+      - POSTGRES_USER=asl_user
+      - POSTGRES_PASSWORD=${ASL_DB_PASSWORD:-change_me_in_production}
+    volumes:
+      - /opt/stack/ai-models:/models:ro  # Mount models directory (read-only)
+      - /opt/stack/data/asl-ml-api/logs:/app/logs  # Logs directory
+    depends_on:
+      asl-postgres:
+        condition: service_healthy
+    networks:
+      - stack-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# Network (if not already defined in your main docker-compose.yml)
+networks:
+  stack-network:
+    external: true  # Use existing network
+
