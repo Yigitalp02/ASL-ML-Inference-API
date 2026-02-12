@@ -63,8 +63,12 @@ try {
 }
 
 if (-Not $SkipUpload) {
+    # Clean up old upload first
+    Write-Host "`n[3/7] Cleaning previous upload..." -ForegroundColor Yellow
+    ssh $SERVER "rm -rf /tmp/asl-ml-server /tmp/rf_asl_15letters.pkl"
+    
     # Upload project files
-    Write-Host "`n[3/7] Uploading project files..." -ForegroundColor Yellow
+    Write-Host "[3/7] Uploading project files..." -ForegroundColor Yellow
     scp -r "$SCRIPT_DIR" "${SERVER}:/tmp/asl-ml-server"
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  [ERROR] Upload failed" -ForegroundColor Red
