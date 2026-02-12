@@ -176,6 +176,6 @@ Write-Host "  2. Test prediction: curl -X POST http://${ServerIP}:8200/predict .
 Write-Host "  3. Update desktop app to use API endpoint" -ForegroundColor White
 Write-Host ""
 Write-Host "View logs:" -ForegroundColor Yellow
-Write-Host "  ssh $SERVER 'sudo docker compose logs -f asl-ml-api'" -ForegroundColor White
+Write-Host "  ssh $SERVER `"sudo docker compose logs -f asl-ml-api`"" -ForegroundColor White
 Write-Host ""
 
