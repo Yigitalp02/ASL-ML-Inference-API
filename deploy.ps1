@@ -91,32 +91,22 @@ if (-Not $SkipUpload) {
 
 # Execute deployment on server
 Write-Host "`n[5/7] Setting up directories on server..." -ForegroundColor Yellow
-ssh $SERVER @"
-    set -e
-    echo '  -> Moving files to /opt/stack/'
-    sudo mv /tmp/asl-ml-server /opt/stack/ || true
-    sudo chown -R bilgin:bilgin /opt/stack/asl-ml-server
+Write-Host "  Note: You'll be prompted for sudo password several times" -ForegroundColor Yellow
 
-    echo '  -> Creating directories'
-    sudo mkdir -p /opt/stack/config/asl-ml-api
-    sudo mkdir -p /opt/stack/data/asl-ml-api/logs
-    sudo mkdir -p /opt/stack/data/asl-postgres
-    sudo mkdir -p /opt/stack/ai-models
+# Move files
+ssh $SERVER "echo '  -> Moving files to /opt/stack/'; sudo mv /tmp/asl-ml-server /opt/stack/ 2>/dev/null || true; sudo chown -R bilgin:bilgin /opt/stack/asl-ml-server"
 
-    echo '  -> Setting permissions'
-    sudo chown -R bilgin:bilgin /opt/stack/config/asl-ml-api
-    sudo chown -R bilgin:bilgin /opt/stack/data/asl-ml-api
-    sudo chown -R bilgin:bilgin /opt/stack/ai-models
+# Create directories
+ssh $SERVER "echo '  -> Creating directories'; sudo mkdir -p /opt/stack/config/asl-ml-api /opt/stack/data/asl-ml-api/logs /opt/stack/data/asl-postgres /opt/stack/ai-models"
 
-    echo '  -> Copying init script'
-    cp /opt/stack/asl-ml-server/init-db.sql /opt/stack/config/asl-ml-api/
+# Set permissions
+ssh $SERVER "echo '  -> Setting permissions'; sudo chown -R bilgin:bilgin /opt/stack/config/asl-ml-api /opt/stack/data/asl-ml-api /opt/stack/ai-models"
 
-    if [ -f /tmp/rf_asl_15letters.pkl ]; then
-        echo '  -> Moving model to ai-models/'
-        sudo mv /tmp/rf_asl_15letters.pkl /opt/stack/ai-models/
-        sudo chown bilgin:bilgin /opt/stack/ai-models/rf_asl_15letters.pkl
-    fi
-"@
+# Copy init script
+ssh $SERVER "echo '  -> Copying init script'; cp /opt/stack/asl-ml-server/init-db.sql /opt/stack/config/asl-ml-api/"
+
+# Move model if exists
+ssh $SERVER "if [ -f /tmp/rf_asl_15letters.pkl ]; then echo '  -> Moving model to ai-models/'; sudo mv /tmp/rf_asl_15letters.pkl /opt/stack/ai-models/; sudo chown bilgin:bilgin /opt/stack/ai-models/rf_asl_15letters.pkl; fi"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  [ERROR] Setup failed" -ForegroundColor Red
@@ -126,19 +116,16 @@ Write-Host "  [OK] Setup complete" -ForegroundColor Green
 
 # Build and start containers
 Write-Host "`n[6/7] Building and starting containers..." -ForegroundColor Yellow
-ssh $SERVER @"
-    set -e
-    cd /opt/stack
-    
-    echo '  -> Building asl-ml-api container'
-    sudo docker compose build asl-ml-api
-    
-    echo '  -> Starting services'
-    sudo docker compose up -d asl-postgres asl-ml-api
-    
-    echo '  -> Waiting for services to start...'
-    sleep 5
-"@
+Write-Host "  This may take 2-3 minutes..." -ForegroundColor Yellow
+
+# Build container
+ssh $SERVER "cd /opt/stack && echo '  -> Building asl-ml-api container' && sudo docker compose build asl-ml-api"
+
+# Start services
+ssh $SERVER "cd /opt/stack && echo '  -> Starting services' && sudo docker compose up -d asl-postgres asl-ml-api"
+
+# Wait for startup
+ssh $SERVER "echo '  -> Waiting for services to start...' && sleep 5"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  [ERROR] Container startup failed" -ForegroundColor Red
