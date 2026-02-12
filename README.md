@@ -1,118 +1,46 @@
 # ASL ML Inference API
 
-Fast, scalable ML inference server for real-time American Sign Language recognition.
+Cloud-based machine learning inference API for real-time American Sign Language (ASL) recognition from sensor glove data.
+
+**Live API:** [https://api.ybilgin.com](https://api.ybilgin.com)
 
 ---
 
-## Overview
+## Features
 
-This is a production-ready FastAPI service that provides real-time sign language predictions from IoT glove sensor data. Designed for low-latency (<50ms) inference with automatic logging and analytics.
-
-### Features
-
-- **Fast**: <50ms prediction latency
-- **Logging**: Automatic prediction storage in PostgreSQL
-- **Analytics**: Built-in statistics endpoints
-- **Secure**: Non-root container, CORS configured
-- **Containerized**: Docker Compose ready
-- **Documented**: Auto-generated Swagger/ReDoc docs
-- **Production Ready**: Health checks, graceful shutdown, error handling
-
----
-
-## Architecture
-
-```
-┌─────────────┐      ┌──────────────┐      ┌─────────────┐
-│  IoT Glove  │ ───► │ Desktop App  │ ───► │  FastAPI    │
-│   (5 flex)  │      │   (Tauri)    │      │   Server    │
-└─────────────┘      └──────────────┘      └──────┬──────┘
-                                                   │
-                                            ┌──────▼──────┐
-                                            │ PostgreSQL  │
-                                            │  (Logging)  │
-                                            └─────────────┘
-```
-
----
-
-## Project Structure
-
-```
-asl-ml-server/
-├── app/
-│   └── main.py              # FastAPI application
-├── Dockerfile               # Container definition
-├── requirements.txt         # Python dependencies
-├── init-db.sql             # Database schema
-├── docker-compose-service.yml  # Service definition
-├── DEPLOYMENT_GUIDE.md     # Complete deployment guide
-└── README.md               # This file
-```
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- Docker & Docker Compose
-- Trained ML model (.pkl file)
-- Python 3.11+ (for local development)
-
-### Local Development
-
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Set environment variables
-export MODEL_PATH=../iot-sign-glove/models/rf_asl_15letters.pkl
-export POSTGRES_HOST=localhost
-export POSTGRES_DB=asl_predictions
-export POSTGRES_USER=asl_user
-export POSTGRES_PASSWORD=password
-
-# Run locally
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-Visit: http://localhost:8000/docs
-
-### Docker Deployment
-
-See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for complete instructions.
-
-Quick version:
-
-```bash
-# Build
-docker compose build asl-ml-api
-
-# Run
-docker compose up -d asl-ml-api asl-postgres
-
-# Check logs
-docker compose logs -f asl-ml-api
-
-# Test
-curl http://localhost:8200/health
-```
+- **Fast Predictions**: <50ms inference time
+- **15 ASL Letters**: A, B, C, D, E, F, I, K, O, S, T, V, W, X, Y
+- **Cloud-Powered**: Deployed on home server with Cloudflare Zero Trust
+- **PostgreSQL Logging**: Stores prediction history for analytics
+- **RESTful API**: Simple JSON endpoints
+- **Auto-generated Docs**: Interactive Swagger UI at `/docs`
 
 ---
 
 ## API Endpoints
 
-### POST /predict
+### `GET /health`
+Check API health and model status.
 
+**Response:**
+```json
+{
+  "status": "healthy",
+  "model_loaded": true,
+  "model_name": "rf_asl_15letters",
+  "database_connected": true,
+  "uptime_seconds": 123.45
+}
+```
+
+### `POST /predict`
 Predict ASL letter from sensor data.
 
 **Request:**
 ```json
 {
-  "flex_sensors": [512.3, 678.1, 345.9, 890.2, 234.5],
-  "timestamp": 1234567890.123,
-  "device_id": "glove-001"
+  "flex_sensors": [[512, 678, 345, 890, 234], [510, 680, 344, 891, 235]],
+  "device_id": "desktop-app"
 }
 ```
 
@@ -121,231 +49,90 @@ Predict ASL letter from sensor data.
 {
   "letter": "A",
   "confidence": 0.85,
-  "all_probabilities": {
-    "A": 0.85,
-    "B": 0.10,
-    "C": 0.05
-  },
-  "processing_time_ms": 12.5,
+  "all_probabilities": {"A": 0.85, "B": 0.05, ...},
+  "processing_time_ms": 23.5,
   "model_name": "rf_asl_15letters",
   "timestamp": 1234567890.123
 }
 ```
 
-### GET /health
+### `GET /stats`
+Get prediction statistics (last 24h).
 
-Health check endpoint.
+### `GET /docs`
+Interactive API documentation (Swagger UI).
 
-**Response:**
-```json
-{
-  "status": "healthy",
-  "model_loaded": true,
-  "model_name": "rf_asl_15letters",
-  "model_loaded_at": "2024-01-01T12:00:00",
-  "database_connected": true,
-  "uptime_seconds": 3600.5
-}
+---
+
+## Tech Stack
+
+- **FastAPI**: High-performance Python web framework
+- **scikit-learn**: Random Forest ML model
+- **PostgreSQL**: Prediction history database
+- **Docker**: Containerized deployment
+- **Cloudflare**: Zero Trust tunnel for HTTPS
+
+---
+
+## Deployment
+
+The API is deployed on an Ubuntu Server 24.04 LTS home server using Docker Compose.
+
+### Quick Deploy to Server
+
+```bash
+# Run the automated deployment script (from Windows)
+.\deploy.ps1
 ```
 
-### GET /stats
+This will:
+1. Upload files to the server via SCP
+2. Copy the ML model to `/opt/stack/ai-models/`
+3. Build the Docker image
+4. Start the service
 
-Get prediction statistics.
+### Manual Deployment
 
-**Response:**
-```json
-{
-  "total_predictions": 1234,
-  "last_24h_avg_confidence": 0.82,
-  "last_1h_avg_processing_ms": 15.3,
-  "top_letters_24h": [
-    {"letter": "A", "count": 150},
-    {"letter": "E", "count": 120}
-  ]
-}
+```bash
+# On the server
+cd /opt/stack/asl-ml-server
+sudo git pull
+
+# Rebuild and restart
+cd /opt/stack
+sudo docker compose build asl-ml-api
+sudo docker compose up -d asl-ml-api
+
+# Check logs
+sudo docker compose logs -f asl-ml-api
 ```
-
-### GET /docs
-
-Interactive Swagger UI for testing endpoints.
-
-### GET /
-
-API information and available endpoints.
 
 ---
 
 ## Configuration
 
-### Environment Variables
+The service is configured via environment variables in `/opt/stack/docker-compose.yml`:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MODEL_PATH` | `/models/rf_asl_15letters.pkl` | Path to ML model |
-| `POSTGRES_HOST` | `postgres` | Database host |
-| `POSTGRES_PORT` | `5432` | Database port |
-| `POSTGRES_DB` | `asl_predictions` | Database name |
-| `POSTGRES_USER` | `asl_user` | Database user |
-| `POSTGRES_PASSWORD` | `asl_password` | Database password |
-
-### Model Requirements
-
-The API expects a scikit-learn Random Forest model with:
-- Input: 5 features (flex sensor values)
-- Output: String labels (A-Z letters)
-- Methods: `predict()`, `predict_proba()`, `classes_`
-
-Supported model files:
-- `rf_asl_15letters.pkl` (recommended)
-- `rf_asl_calibrated.pkl`
-- Any scikit-learn classifier with above interface
-
----
-
-## Database Schema
-
-### Table: predictions
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | SERIAL | Primary key |
-| letter | VARCHAR(5) | Predicted letter |
-| confidence | FLOAT | Confidence score (0-1) |
-| sensor_data | FLOAT[] | Raw sensor values |
-| device_id | VARCHAR(100) | Source device |
-| processing_time_ms | FLOAT | Inference time |
-| predicted_at | TIMESTAMP | Prediction time |
-| created_at | TIMESTAMP | Row creation time |
-
-### Views
-
-- `daily_stats`: Aggregated daily statistics
-- `letter_frequency`: Letter distribution and accuracy
-
----
-
-## Testing
-
-### Health Check
-
-```bash
-curl http://localhost:8200/health
-```
-
-### Test Prediction
-
-```bash
-curl -X POST http://localhost:8200/predict \
-  -H "Content-Type: application/json" \
-  -d '{
-    "flex_sensors": [512.3, 678.1, 345.9, 890.2, 234.5],
-    "device_id": "test-client"
-  }'
-```
-
-### Load Testing
-
-```bash
-# Install Apache Bench
-sudo apt install apache2-utils
-
-# Run load test (1000 requests, 10 concurrent)
-ab -n 1000 -c 10 -p test-payload.json -T application/json \
-  http://localhost:8200/predict
+```yaml
+asl-ml-api:
+  build: ./asl-ml-server
+  environment:
+    - MODEL_PATH=/models/rf_asl_15letters.pkl
+    - POSTGRES_HOST=asl-postgres
+    - POSTGRES_DB=asl_predictions
+  volumes:
+    - /opt/stack/ai-models:/models:ro
 ```
 
 ---
 
-## Performance
+## Model Details
 
-Benchmarked on i7-4700HQ, 16GB RAM:
-
-- **Cold Start**: ~5 seconds
-- **Inference Time**: 5-15ms
-- **Total Response**: 20-50ms (including DB logging)
-- **Throughput**: ~200 requests/second
-- **Memory**: ~150MB per worker
-
----
-
-## Security
-
-- Non-root container user
-- Read-only model mount
-- CORS configured
-- Input validation (Pydantic)
-- SQL injection protection (parameterized queries)
-- No secrets in code (environment variables)
-
-**Production Recommendations:**
-- Use strong database password
-- Enable Cloudflare WAF
-- Add rate limiting (e.g., nginx)
-- Enable access logs
-- Set up monitoring (Prometheus/Grafana)
-
----
-
-## Troubleshooting
-
-### Model Not Loading
-
-```bash
-# Check if model exists
-docker compose exec asl-ml-api ls -l /models/
-
-# Check model format
-docker compose exec asl-ml-api python -c \
-  "import joblib; m = joblib.load('/models/rf_asl_15letters.pkl'); print(m)"
-```
-
-### Database Connection Issues
-
-```bash
-# Check if postgres is running
-docker compose ps asl-postgres
-
-# Test connection
-docker compose exec asl-ml-api python -c \
-  "import asyncpg; import asyncio; asyncio.run(asyncpg.connect(host='asl-postgres', user='asl_user', password='password', database='asl_predictions'))"
-```
-
-### High Latency
-
-```bash
-# Check container resources
-docker stats asl-ml-api
-
-# Enable debug logging
-docker compose logs -f asl-ml-api
-```
-
----
-
-## Updates
-
-### Update Model
-
-```bash
-# Replace model file
-cp new_model.pkl /opt/stack/ai-models/rf_asl_15letters.pkl
-
-# Restart API (picks up new model)
-docker compose restart asl-ml-api
-```
-
-### Update Code
-
-```bash
-# Pull latest code
-cd /opt/stack/asl-ml-server
-git pull
-
-# Rebuild and restart
-cd /opt/stack
-docker compose build asl-ml-api
-docker compose up -d asl-ml-api
-```
+- **Type**: Random Forest Classifier
+- **Features**: 25 statistical features (mean, std, min, max, range per flex sensor)
+- **Training Data**: ASL-Sensor-Dataglove-Dataset (25 users)
+- **Validation Accuracy**: ~70-75% (Leave-One-User-Out)
+- **Real-World Performance**: 85-95% confidence with real glove
 
 ---
 
@@ -353,62 +140,24 @@ docker compose up -d asl-ml-api
 
 ### Desktop App (Tauri/Rust)
 
+The desktop application calls the API for predictions:
+
 ```rust
-use reqwest;
-use serde_json::json;
-
-async fn predict_letter(sensors: Vec<f64>) -> Result<String, Box<dyn std::error::Error>> {
-    let client = reqwest::Client::new();
-    let res = client
-        .post("https://asl.ybilgin.com/predict")
-        .json(&json!({
-            "flex_sensors": sensors,
-            "device_id": "desktop-app"
-        }))
-        .send()
-        .await?
-        .json::<serde_json::Value>()
-        .await?;
-    
-    Ok(res["letter"].as_str().unwrap().to_string())
-}
-```
-
-### Python Client
-
-```python
-import requests
-
-def predict_letter(sensors):
-    response = requests.post(
-        "https://asl.ybilgin.com/predict",
-        json={
-            "flex_sensors": sensors,
-            "device_id": "python-client"
-        }
-    )
-    return response.json()
-
-# Use it
-result = predict_letter([512.3, 678.1, 345.9, 890.2, 234.5])
-print(f"Predicted: {result['letter']} (confidence: {result['confidence']})")
+let response = reqwest::Client::new()
+    .post("https://api.ybilgin.com/predict")
+    .json(&request_body)
+    .send()
+    .await?;
 ```
 
 ---
 
 ## License
 
-Same as parent project.
+MIT License - See parent repository for details.
 
 ---
 
-## Credits
+## Live Demo
 
-- Built with [FastAPI](https://fastapi.tiangolo.com/)
-- ML models trained with [scikit-learn](https://scikit-learn.org/)
-- Deployed with [Docker](https://www.docker.com/)
-
----
-
-**For deployment instructions, see [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)**
-
+Visit [https://api.ybilgin.com/docs](https://api.ybilgin.com/docs) to try the API interactively!
