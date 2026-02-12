@@ -6,7 +6,7 @@ Optimized for low latency (<50ms response time)
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Union
 import joblib
 import numpy as np
 import logging
@@ -90,17 +90,52 @@ async def get_db_pool():
             db_pool = None
     return db_pool
 
+# Feature extraction function (matches training script)
+def extract_features_from_window(window: np.ndarray) -> np.ndarray:
+    """
+    Extract 25 statistical features from a window of sensor samples.
+    For each of the 5 flex sensors, computes: mean, std, min, max, range
+    
+    Args:
+        window: numpy array of shape (n_samples, 5) where n_samples >= 1
+        
+    Returns:
+        numpy array of 25 features
+    """
+    features = []
+    
+    for finger_idx in range(5):
+        finger_values = window[:, finger_idx]
+        features.extend([
+            np.mean(finger_values),
+            np.std(finger_values),
+            np.min(finger_values),
+            np.max(finger_values),
+            np.max(finger_values) - np.min(finger_values)  # range
+        ])
+    
+    return np.array(features)
+
+
 # Request/Response models
 class SensorData(BaseModel):
-    """Raw sensor data from glove"""
-    flex_sensors: List[float] = Field(..., description="5 flex sensor values (0-1023)")
+    """
+    Raw sensor data from glove.
+    Can accept either:
+    1. A window of samples (preferred, for best accuracy): List[List[float]] 
+    2. A single sample (quick mode): List[float]
+    """
+    flex_sensors: Union[List[List[float]], List[float]] = Field(
+        ..., 
+        description="Flex sensor readings. Either [[f1,f2,f3,f4,f5], ...] for windowed data, or [f1,f2,f3,f4,f5] for single sample"
+    )
     timestamp: Optional[float] = Field(default_factory=time.time)
     device_id: Optional[str] = Field(default="desktop-app", description="Source device identifier")
     
     class Config:
         json_schema_extra = {
             "example": {
-                "flex_sensors": [512.3, 678.1, 345.9, 890.2, 234.5],
+                "flex_sensors": [[512.3, 678.1, 345.9, 890.2, 234.5], [510.1, 680.5, 344.2, 891.3, 235.8]],
                 "timestamp": 1234567890.123,
                 "device_id": "glove-001"
             }
@@ -191,8 +226,26 @@ async def predict(sensor_data: SensorData):
         raise HTTPException(status_code=503, detail="Model not loaded")
     
     try:
-        # Prepare input features
-        features = np.array(sensor_data.flex_sensors).reshape(1, -1)
+        # Convert sensor data to numpy array
+        sensor_array = np.array(sensor_data.flex_sensors)
+        
+        # Check if it's windowed data or single sample
+        if sensor_array.ndim == 1:
+            # Single sample - convert to window with 1 sample
+            # This gives less accurate results but still works
+            sensor_array = sensor_array.reshape(1, -1)
+        elif sensor_array.ndim == 2:
+            # Already windowed data (multiple samples x 5 sensors)
+            pass
+        else:
+            raise ValueError(f"Invalid sensor data shape: {sensor_array.shape}")
+        
+        # Extract 25 statistical features from the window
+        features = extract_features_from_window(sensor_array).reshape(1, -1)
+        
+        # Validate feature count
+        if features.shape[1] != 25:
+            raise ValueError(f"Expected 25 features, got {features.shape[1]}")
         
         # Get prediction
         prediction = model_manager.model.predict(features)[0]
@@ -217,10 +270,11 @@ async def predict(sensor_data: SensorData):
         processing_time = (time.time() - start_time) * 1000  # Convert to ms
         
         # Log prediction to database (async, don't wait)
+        # Store the extracted features (25 values) instead of raw sensor data for consistency
         app.state.last_prediction = {
             "letter": str(prediction),
             "confidence": confidence,
-            "sensor_data": sensor_data.flex_sensors,
+            "sensor_data": features[0].tolist(),  # Store the 25 features
             "timestamp": sensor_data.timestamp,
             "device_id": sensor_data.device_id,
             "processing_time_ms": processing_time
@@ -239,7 +293,7 @@ async def predict(sensor_data: SensorData):
                         """,
                         str(prediction),
                         confidence,
-                        sensor_data.flex_sensors,
+                        features[0].tolist(),  # Store the 25 features
                         sensor_data.device_id,
                         processing_time
                     )
