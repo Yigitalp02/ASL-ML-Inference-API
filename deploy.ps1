@@ -156,10 +156,12 @@ try {
     Write-Host ""
     Write-Host "  Status: $($response.status)" -ForegroundColor Green
     Write-Host "  Model: $($response.model_name)" -ForegroundColor Green
-    Write-Host "  Database: $(if ($response.database_connected) { 'Connected' } else { 'Not connected' })" -ForegroundColor $(if ($response.database_connected) { 'Green' } else { 'Yellow' })
+    $dbStatus = if ($response.database_connected) { "Connected" } else { "Not connected" }
+    $dbColor = if ($response.database_connected) { "Green" } else { "Yellow" }
+    Write-Host "  Database: $dbStatus" -ForegroundColor $dbColor
 } catch {
     Write-Host "  ✗ API health check failed" -ForegroundColor Red
-    Write-Host "  Check logs: ssh $SERVER 'sudo docker compose logs -f asl-ml-api'" -ForegroundColor Yellow
+    Write-Host "  Check logs: ssh $SERVER `"sudo docker compose logs -f asl-ml-api`"" -ForegroundColor Yellow
 }
 
 Write-Host "`n==========================================" -ForegroundColor Cyan
