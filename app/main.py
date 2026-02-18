@@ -23,11 +23,114 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# FastAPI app
+# FastAPI app with comprehensive documentation
 app = FastAPI(
-    title="ASL ML API",
-    description="Real-time sign language recognition API",
-    version="1.0.0"
+    title="ASL Sign Language Recognition API",
+    description="""
+    **Real-time American Sign Language Recognition API**
+    
+    This API provides machine learning-powered ASL letter recognition from smart glove sensor data.
+    
+    ## Features
+    
+    - **Fast Predictions**: <50ms inference time
+    - **15 ASL Letters**: A, B, C, D, E, F, I, K, O, S, T, V, W, X, Y  
+    - **Flexible Input**: Accepts single samples or windowed data
+    - **High Confidence**: 85-95% accuracy with real glove data
+    - **Analytics**: Prediction history and statistics
+    - **PostgreSQL Logging**: Stores all predictions for analysis
+    
+    ## How It Works
+    
+    1. **Collect sensor data** from your smart glove (5 flex sensors)
+    2. **Send data** to `/predict` endpoint
+    3. **Receive prediction** with letter and confidence score
+    
+    ## Quick Start
+    
+    ### Try it now:
+    1. Click on **`POST /predict`** below
+    2. Click **"Try it out"**
+    3. Use the example request or modify it
+    4. Click **"Execute"**
+    5. See your prediction result!
+    
+    ## Input Formats
+    
+    The API accepts two types of input:
+    
+    ### Option 1: Windowed Data (Recommended for best accuracy)
+    ```json
+    {
+      "flex_sensors": [
+        [512, 678, 345, 890, 234],
+        [510, 680, 344, 891, 235],
+        [511, 679, 346, 892, 236]
+      ]
+    }
+    ```
+    
+    ### Option 2: Single Sample (Quick mode)
+    ```json
+    {
+      "flex_sensors": [512, 678, 345, 890, 234]
+    }
+    ```
+    
+    ## API Endpoints
+    
+    - **`POST /predict`** - Make a prediction
+    - **`GET /health`** - Check API status
+    - **`GET /stats`** - View prediction statistics
+    - **`GET /`** - API information
+    
+    ## Integration Example
+    
+    ```python
+    import requests
+    
+    # Prepare data
+    data = {
+        "flex_sensors": [[512, 678, 345, 890, 234]],
+        "device_id": "my-glove"
+    }
+    
+    # Make request
+    response = requests.post(
+        "https://api.ybilgin.com/predict",
+        json=data
+    )
+    
+    # Get result
+    result = response.json()
+    print(f"Predicted: {result['letter']}")
+    print(f"Confidence: {result['confidence']:.2%}")
+    ```
+    
+    ## Support
+    
+    For questions or issues:
+    - Email: support@ybilgin.com
+    - GitHub: https://github.com/Yigitalp02
+    
+    ## Notes
+    
+    - All predictions are logged for quality improvement
+    - Response times are typically 20-40ms
+    - The model was trained on 25 users' data
+    """,
+    version="1.0.0",
+    contact={
+        "name": "IoT Sign Language Team",
+        "email": "support@ybilgin.com",
+        "url": "https://github.com/Yigitalp02"
+    },
+    license_info={
+        "name": "MIT License",
+        "url": "https://opensource.org/licenses/MIT"
+    },
+    docs_url="/docs",
+    redoc_url="/redoc"
 )
 
 # CORS - allow desktop app to connect
@@ -197,7 +300,41 @@ async def shutdown_event():
         logger.info("Database pool closed")
 
 # Health check endpoint
-@app.get("/health", response_model=HealthResponse)
+@app.get(
+    "/health",
+    response_model=HealthResponse,
+    tags=["System"],
+    summary="Health Check",
+    description="""
+    Check if the API and ML model are running properly.
+    
+    Returns:
+    - **status**: "healthy" or "degraded"
+    - **model_loaded**: Whether the ML model is loaded
+    - **model_name**: Name of the loaded model
+    - **database_connected**: PostgreSQL connection status
+    - **uptime_seconds**: How long the API has been running
+    
+    **Use this endpoint** to verify the API is ready before making predictions.
+    """,
+    responses={
+        200: {
+            "description": "API is operational",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "healthy",
+                        "model_loaded": True,
+                        "model_name": "rf_asl_15letters",
+                        "model_loaded_at": "2026-02-18T16:30:00",
+                        "database_connected": True,
+                        "uptime_seconds": 123.45
+                    }
+                }
+            }
+        }
+    }
+)
 async def health_check():
     """Check API health status"""
     pool = await get_db_pool()
@@ -212,7 +349,112 @@ async def health_check():
     )
 
 # Prediction endpoint
-@app.post("/predict", response_model=PredictionResponse)
+@app.post(
+    "/predict",
+    response_model=PredictionResponse,
+    tags=["Prediction"],
+    summary="Predict ASL Sign",
+    description="""
+    Predict ASL letter from smart glove sensor data.
+    
+    ## Input Format
+    
+    Send 5 flex sensor readings (one per finger). You can send either:
+    
+    ### Windowed Data (Recommended)
+    Multiple samples for better accuracy:
+    ```json
+    {
+      "flex_sensors": [
+        [512, 678, 345, 890, 234],
+        [510, 680, 344, 891, 235],
+        [511, 679, 346, 892, 236]
+      ],
+      "device_id": "my-glove"
+    }
+    ```
+    
+    ### Single Sample (Quick Mode)
+    One sample for faster response:
+    ```json
+    {
+      "flex_sensors": [512, 678, 345, 890, 234],
+      "device_id": "my-glove"
+    }
+    ```
+    
+    ## Output
+    
+    Returns:
+    - **letter**: Predicted ASL letter (A-Y, 15 letters total)
+    - **confidence**: Score from 0-1 (higher is better)
+    - **all_probabilities**: Confidence for all possible letters
+    - **processing_time_ms**: How long the prediction took
+    - **model_name**: Which ML model was used
+    
+    ## Tips
+    
+    - Send **100-150 samples** (2-3 seconds at 50Hz) for best accuracy
+    - Ensure sensors are **calibrated** properly
+    - Check **confidence score** - values >0.8 are very reliable
+    
+    ## Example Usage
+    
+    ```python
+    import requests
+    
+    response = requests.post(
+        "https://api.ybilgin.com/predict",
+        json={
+            "flex_sensors": [[512, 678, 345, 890, 234]],
+            "device_id": "glove-001"
+        }
+    )
+    
+    result = response.json()
+    print(f"Letter: {result['letter']}")
+    print(f"Confidence: {result['confidence']:.2%}")
+    ```
+    """,
+    responses={
+        200: {
+            "description": "Successful prediction",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "letter": "A",
+                        "confidence": 0.92,
+                        "all_probabilities": {
+                            "A": 0.92,
+                            "S": 0.04,
+                            "B": 0.02,
+                            "C": 0.01
+                        },
+                        "processing_time_ms": 23.5,
+                        "model_name": "rf_asl_15letters",
+                        "timestamp": 1708268123.456
+                    }
+                }
+            }
+        },
+        503: {
+            "description": "Model not loaded",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Model not loaded"}
+                }
+            }
+        },
+        500: {
+            "description": "Prediction error",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Prediction failed: Invalid sensor data"}
+                }
+            }
+        }
+    }
+)
 async def predict(sensor_data: SensorData):
     """
     Predict ASL letter from sensor data
@@ -314,7 +556,41 @@ async def predict(sensor_data: SensorData):
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
 # Statistics endpoint
-@app.get("/stats")
+@app.get(
+    "/stats",
+    tags=["Analytics"],
+    summary="Get Prediction Statistics",
+    description="""
+    Get analytics about API usage and prediction performance.
+    
+    Returns statistics for:
+    - Total predictions made
+    - Average confidence (last 24 hours)
+    - Average processing time (last hour)
+    - Most predicted letters (last 24 hours)
+    
+    Useful for monitoring model performance and usage patterns.
+    """,
+    responses={
+        200: {
+            "description": "Statistics retrieved",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "total_predictions": 1523,
+                        "last_24h_avg_confidence": 0.87,
+                        "last_1h_avg_processing_ms": 28.3,
+                        "top_letters_24h": [
+                            {"letter": "A", "count": 45},
+                            {"letter": "S", "count": 38},
+                            {"letter": "B", "count": 32}
+                        ]
+                    }
+                }
+            }
+        }
+    }
+)
 async def get_statistics():
     """Get prediction statistics"""
     pool = await get_db_pool()
@@ -362,7 +638,21 @@ async def get_statistics():
         raise HTTPException(status_code=500, detail=str(e))
 
 # Root endpoint
-@app.get("/")
+@app.get(
+    "/",
+    tags=["Info"],
+    summary="API Information",
+    description="""
+    Get basic information about the ASL Recognition API.
+    
+    Returns:
+    - Service name and version
+    - Available endpoints
+    - Model status
+    
+    **Tip**: Visit `/docs` for interactive API documentation!
+    """
+)
 async def root():
     """API information"""
     return {
