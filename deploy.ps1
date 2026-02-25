@@ -37,7 +37,11 @@ try {
 
 $SERVER = "${ServerUser}@${ServerIP}"
 $SCRIPT_DIR = $PSScriptRoot
-$MODEL_PATH = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_15letters.pkl"
+# Prefer the preserved 96% normalized model, then fall back to generic normalized, then legacy
+$MODEL_96PCT   = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_15letters_normalized_96pct_seed1.pkl"
+$NORMALIZED_MODEL = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_15letters_normalized.pkl"
+$LEGACY_MODEL  = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_15letters.pkl"
+$MODEL_PATH = if (Test-Path $MODEL_96PCT) { $MODEL_96PCT } elseif (Test-Path $NORMALIZED_MODEL) { $NORMALIZED_MODEL } else { $LEGACY_MODEL }
 
 Write-Host "[1/7] Checking prerequisites..." -ForegroundColor Yellow
 
@@ -47,7 +51,8 @@ if (-Not (Test-Path $MODEL_PATH)) {
     Write-Host "Deployment will continue, but you need to upload the model manually." -ForegroundColor Yellow
     $MODEL_EXISTS = $false
 } else {
-    Write-Host "  [OK] Model found: $MODEL_PATH" -ForegroundColor Green
+    $modelName = [System.IO.Path]::GetFileName($MODEL_PATH)
+    Write-Host "  [OK] Model found: $modelName" -ForegroundColor Green
     $MODEL_EXISTS = $true
 }
 
@@ -76,15 +81,16 @@ if (-Not $SkipUpload) {
     }
     Write-Host "  [OK] Files uploaded to /tmp/asl-ml-server" -ForegroundColor Green
 
-    # Upload model if exists
+    # Upload model keeping its original filename
     if ($MODEL_EXISTS) {
-        Write-Host "`n[4/7] Uploading ML model..." -ForegroundColor Yellow
-        scp "$MODEL_PATH" "${SERVER}:/tmp/rf_asl_15letters.pkl"
+        $modelFileName = [System.IO.Path]::GetFileName($MODEL_PATH)
+        Write-Host "`n[4/7] Uploading ML model ($modelFileName)..." -ForegroundColor Yellow
+        scp "$MODEL_PATH" "${SERVER}:/tmp/$modelFileName"
         if ($LASTEXITCODE -ne 0) {
             Write-Host "  [ERROR] Model upload failed" -ForegroundColor Red
             exit 1
         }
-        Write-Host "  [OK] Model uploaded" -ForegroundColor Green
+        Write-Host "  [OK] Model uploaded as $modelFileName" -ForegroundColor Green
     } else {
         Write-Host "`n[4/7] Skipping model upload (not found)" -ForegroundColor Yellow
     }
@@ -98,7 +104,8 @@ Write-Host "`n[5/7] Setting up directories on server..." -ForegroundColor Yellow
 Write-Host "  Note: You'll be prompted for sudo password" -ForegroundColor Yellow
 
 # Combined setup command (one sudo password prompt)
-ssh -t $SERVER "echo '  -> Moving files to /opt/stack/'; sudo bash -c 'mv /tmp/asl-ml-server /opt/stack/ 2>/dev/null || true; chown -R bilgin:bilgin /opt/stack/asl-ml-server; echo \"  -> Creating directories\"; mkdir -p /opt/stack/config/asl-ml-api /opt/stack/data/asl-ml-api/logs /opt/stack/data/asl-postgres /opt/stack/ai-models; echo \"  -> Setting permissions\"; chown -R bilgin:bilgin /opt/stack/config/asl-ml-api /opt/stack/data/asl-ml-api /opt/stack/ai-models; if [ -f /tmp/rf_asl_15letters.pkl ]; then echo \"  -> Moving model to ai-models/\"; mv /tmp/rf_asl_15letters.pkl /opt/stack/ai-models/; chown bilgin:bilgin /opt/stack/ai-models/rf_asl_15letters.pkl; fi' && echo '  -> Copying init script' && cp /opt/stack/asl-ml-server/init-db.sql /opt/stack/config/asl-ml-api/"
+$modelFileName = [System.IO.Path]::GetFileName($MODEL_PATH)
+ssh -t $SERVER "echo '  -> Moving files to /opt/stack/'; sudo bash -c 'mv /tmp/asl-ml-server /opt/stack/ 2>/dev/null || true; chown -R bilgin:bilgin /opt/stack/asl-ml-server; echo \"  -> Creating directories\"; mkdir -p /opt/stack/config/asl-ml-api /opt/stack/data/asl-ml-api/logs /opt/stack/data/asl-postgres /opt/stack/ai-models; echo \"  -> Setting permissions\"; chown -R bilgin:bilgin /opt/stack/config/asl-ml-api /opt/stack/data/asl-ml-api /opt/stack/ai-models; if [ -f /tmp/$modelFileName ]; then echo \"  -> Moving model to ai-models/\"; mv /tmp/$modelFileName /opt/stack/ai-models/; chown bilgin:bilgin /opt/stack/ai-models/$modelFileName; fi' && echo '  -> Copying init script' && cp /opt/stack/asl-ml-server/init-db.sql /opt/stack/config/asl-ml-api/"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  [ERROR] Setup failed" -ForegroundColor Red

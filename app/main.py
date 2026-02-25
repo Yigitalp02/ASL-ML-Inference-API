@@ -3,8 +3,7 @@ ASL ML Inference API
 Fast prediction endpoint for IoT sign language glove
 Optimized for low latency (<50ms response time)
 """
-from fastapi import FastAPI, HTTPException, Request, Security, Depends
-from fastapi.security import APIKeyHeader
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Union
@@ -16,8 +15,6 @@ from pathlib import Path
 import asyncpg
 import os
 import time
-from collections import defaultdict
-from functools import wraps
 
 # Logging setup
 logging.basicConfig(
@@ -26,99 +23,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Security: API Key configuration
-API_KEY_NAME = "X-API-Key"
-api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
-
-# Load valid API keys from environment variable
-# Format: "key1,key2,key3" or single key
-VALID_API_KEYS = set(os.getenv("API_KEYS", "").split(",")) if os.getenv("API_KEYS") else set()
-
-# Rate limiting: Track requests per IP
-request_counts = defaultdict(lambda: {"count": 0, "reset_time": time.time() + 60})
-RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "100"))  # requests per minute
-RATE_LIMIT_WINDOW = 60  # seconds
-
-# FastAPI app with comprehensive documentation
+# FastAPI app
 app = FastAPI(
-    title="ASL Sign Language Recognition API",
-    description="""
-    **Real-time American Sign Language Recognition API**
-    
-    This API provides machine learning-powered ASL letter recognition from smart glove sensor data.
-    
-    ## Authentication
-    
-    This API requires an API key for access. Include your API key in the request header:
-    
-    ```
-    X-API-Key: your-api-key-here
-    ```
-    
-    **Example with cURL:**
-    ```bash
-    curl -X POST "https://api.ybilgin.com/predict" \\
-      -H "X-API-Key: your-api-key-here" \\
-      -H "Content-Type: application/json" \\
-      -d '{"flex_sensors": [[512, 678, 345, 890, 234]]}'
-    ```
-    
-    **Example with Python:**
-    ```python
-    import requests
-    
-    headers = {"X-API-Key": "your-api-key-here"}
-    response = requests.post(
-        "https://api.ybilgin.com/predict",
-        json={"flex_sensors": [[512, 678, 345, 890, 234]]},
-        headers=headers
-    )
-    ```
-    
-    ## Rate Limiting
-    
-    - **Limit**: 100 requests per minute per IP address
-    - **Headers**: Check `X-RateLimit-Remaining` in response
-    
-    ## Features
-    
-    - **Fast Predictions**: <50ms inference time
-    - **15 ASL Letters**: A, B, C, D, E, F, I, K, O, S, T, V, W, X, Y  
-    - **Flexible Input**: Accepts single samples or windowed data
-    - **High Confidence**: 85-95% accuracy with real glove data
-    - **Analytics**: Prediction history and statistics
-    - **PostgreSQL Logging**: Stores all predictions for analysis
-    
-    ## How It Works
-    
-    1. **Collect sensor data** from your smart glove (5 flex sensors)
-    2. **Send data** to `/predict` endpoint with API key
-    3. **Receive prediction** with letter and confidence score
-    
-    ## Support
-    
-    For API keys or questions:
-    - Email: support@ybilgin.com
-    - GitHub: https://github.com/Yigitalp02
-    
-    ## Notes
-    
-    - All predictions are logged for quality improvement
-    - Response times are typically 20-40ms
-    - The model was trained on 25 users' data
-    """,
-    version="1.1.0",
-    contact={
-        "name": "IoT Sign Language Team",
-        "email": "support@ybilgin.com",
-        "url": "https://github.com/Yigitalp02"
-    },
-    license_info={
-        "name": "MIT License",
-        "url": "https://opensource.org/licenses/MIT"
-    },
-    docs_url="/docs",
-    redoc_url="/redoc"
+    title="ASL ML API",
+    description="Real-time sign language recognition API",
+    version="1.0.0"
 )
 
 # CORS - allow desktop app to connect
@@ -129,69 +38,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Security: API Key validation
-async def verify_api_key(api_key: str = Security(api_key_header)):
-    """Verify API key from request header"""
-    # If no API keys are configured, allow all requests (backward compatibility)
-    if not VALID_API_KEYS or "" in VALID_API_KEYS:
-        logger.warning("API running without authentication - configure API_KEYS environment variable")
-        return None
-    
-    if api_key is None:
-        raise HTTPException(
-            status_code=401,
-            detail="Missing API Key. Include 'X-API-Key' header in your request."
-        )
-    
-    if api_key not in VALID_API_KEYS:
-        logger.warning(f"Invalid API key attempt: {api_key[:8]}...")
-        raise HTTPException(
-            status_code=403,
-            detail="Invalid API Key"
-        )
-    
-    return api_key
-
-# Rate limiting middleware
-async def rate_limit_check(request: Request):
-    """Check rate limit for IP address"""
-    client_ip = request.client.host
-    current_time = time.time()
-    
-    # Reset counter if window expired
-    if current_time > request_counts[client_ip]["reset_time"]:
-        request_counts[client_ip] = {
-            "count": 0,
-            "reset_time": current_time + RATE_LIMIT_WINDOW
-        }
-    
-    # Increment request count
-    request_counts[client_ip]["count"] += 1
-    
-    # Check if limit exceeded
-    if request_counts[client_ip]["count"] > RATE_LIMIT_REQUESTS:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Rate limit exceeded. Max {RATE_LIMIT_REQUESTS} requests per minute."
-        )
-    
-    return request_counts[client_ip]
-
-# Add rate limit info to response headers
-@app.middleware("http")
-async def add_rate_limit_headers(request: Request, call_next):
-    """Add rate limiting headers to response"""
-    response = await call_next(request)
-    
-    client_ip = request.client.host
-    if client_ip in request_counts:
-        remaining = max(0, RATE_LIMIT_REQUESTS - request_counts[client_ip]["count"])
-        response.headers["X-RateLimit-Limit"] = str(RATE_LIMIT_REQUESTS)
-        response.headers["X-RateLimit-Remaining"] = str(remaining)
-        response.headers["X-RateLimit-Reset"] = str(int(request_counts[client_ip]["reset_time"]))
-    
-    return response
 
 # Global model storage
 class ModelManager:
@@ -249,15 +95,15 @@ def extract_features_from_window(window: np.ndarray) -> np.ndarray:
     """
     Extract 25 statistical features from a window of sensor samples.
     For each of the 5 flex sensors, computes: mean, std, min, max, range
-    
+
     Args:
         window: numpy array of shape (n_samples, 5) where n_samples >= 1
-        
+
     Returns:
         numpy array of 25 features
     """
     features = []
-    
+
     for finger_idx in range(5):
         finger_values = window[:, finger_idx]
         features.extend([
@@ -267,21 +113,21 @@ def extract_features_from_window(window: np.ndarray) -> np.ndarray:
             np.max(finger_values),
             np.max(finger_values) - np.min(finger_values)  # range
         ])
-    
+
     return np.array(features)
 
 
 # Request/Response models
 class SensorData(BaseModel):
     """
-    Raw sensor data from glove.
+    Normalized sensor data from glove (0.0 - 1.0 per finger).
     Can accept either:
-    1. A window of samples (preferred, for best accuracy): List[List[float]] 
+    1. A window of samples (preferred, for best accuracy): List[List[float]]
     2. A single sample (quick mode): List[float]
     """
     flex_sensors: Union[List[List[float]], List[float]] = Field(
-        ..., 
-        description="Flex sensor readings. Either [[f1,f2,f3,f4,f5], ...] for windowed data, or [f1,f2,f3,f4,f5] for single sample"
+        ...,
+        description="Normalized sensor readings (0=straight, 1=fully bent). Either [[f1,f2,f3,f4,f5], ...] for windowed data, or [f1,f2,f3,f4,f5] for single sample"
     )
     timestamp: Optional[float] = Field(default_factory=time.time)
     device_id: Optional[str] = Field(default="desktop-app", description="Source device identifier")
@@ -289,7 +135,7 @@ class SensorData(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "flex_sensors": [[512.3, 678.1, 345.9, 890.2, 234.5], [510.1, 680.5, 344.2, 891.3, 235.8]],
+                "flex_sensors": [[0.02, 0.68, 0.78, 0.65, 0.68], [0.02, 0.69, 0.77, 0.64, 0.67]],
                 "timestamp": 1234567890.123,
                 "device_id": "glove-001"
             }
@@ -312,31 +158,22 @@ class HealthResponse(BaseModel):
     model_loaded_at: Optional[str]
     database_connected: bool
     uptime_seconds: float
-    authentication_enabled: bool
 
 # Startup event
 @app.on_event("startup")
 async def startup_event():
     """Load model on startup"""
-    logger.info("=" * 60)
-    logger.info("ASL Recognition API Starting...")
-    logger.info(f"Version: 1.1.0 (with authentication)")
-    logger.info(f"Authentication: {'Enabled' if VALID_API_KEYS and '' not in VALID_API_KEYS else 'Disabled'}")
-    logger.info(f"Rate Limit: {RATE_LIMIT_REQUESTS} requests/minute")
-    logger.info(f"Documentation: /docs")
-    logger.info(f"Health check: /health")
-    logger.info(f"Prediction endpoint: /predict")
-    logger.info("=" * 60)
-    
-    # Try to load model
-    model_path = os.getenv("MODEL_PATH", "/models/rf_asl_15letters.pkl")
-    
+    # Try to load the normalized 96% model first, then fall back to alternatives
+    model_path = os.getenv("MODEL_PATH", "/models/rf_asl_15letters_normalized_96pct_seed1.pkl")
+
     if not Path(model_path).exists():
         logger.warning(f"Model not found at {model_path}, trying alternatives...")
-        # Try alternative paths
         alternative_paths = [
-            "/models/rf_asl_calibrated.pkl",
+            "/models/rf_asl_15letters_normalized.pkl",
+            "/models/rf_asl_15letters.pkl",
+            "/opt/stack/ai-models/rf_asl_15letters_normalized_96pct_seed1.pkl",
             "/opt/stack/ai-models/rf_asl_15letters.pkl",
+            "./models/rf_asl_15letters_normalized_96pct_seed1.pkl",
             "./models/rf_asl_15letters.pkl"
         ]
         for alt_path in alternative_paths:
@@ -360,48 +197,9 @@ async def shutdown_event():
     if db_pool:
         await db_pool.close()
         logger.info("Database pool closed")
-    logger.info("ASL Recognition API Shutting Down...")
 
-# Health check endpoint (no authentication required)
-@app.get(
-    "/health",
-    response_model=HealthResponse,
-    tags=["System"],
-    summary="Health Check",
-    description="""
-    Check if the API and ML model are running properly.
-    
-    **Note:** This endpoint does not require authentication.
-    
-    Returns:
-    - **status**: "healthy" or "degraded"
-    - **model_loaded**: Whether the ML model is loaded
-    - **model_name**: Name of the loaded model
-    - **database_connected**: PostgreSQL connection status
-    - **uptime_seconds**: How long the API has been running
-    - **authentication_enabled**: Whether API key auth is active
-    
-    Use this endpoint to verify the API is ready before making predictions.
-    """,
-    responses={
-        200: {
-            "description": "API is operational",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "status": "healthy",
-                        "model_loaded": True,
-                        "model_name": "rf_asl_15letters",
-                        "model_loaded_at": "2026-02-18T16:30:00",
-                        "database_connected": True,
-                        "uptime_seconds": 123.45,
-                        "authentication_enabled": True
-                    }
-                }
-            }
-        }
-    }
-)
+# Health check endpoint
+@app.get("/health", response_model=HealthResponse)
 async def health_check():
     """Check API health status"""
     pool = await get_db_pool()
@@ -412,146 +210,12 @@ async def health_check():
         model_name=model_manager.model_name,
         model_loaded_at=model_manager.loaded_at.isoformat() if model_manager.loaded_at else None,
         database_connected=pool is not None,
-        uptime_seconds=time.time() - (model_manager.loaded_at.timestamp() if model_manager.loaded_at else time.time()),
-        authentication_enabled=bool(VALID_API_KEYS and "" not in VALID_API_KEYS)
+        uptime_seconds=time.time() - (model_manager.loaded_at.timestamp() if model_manager.loaded_at else time.time())
     )
 
-# Prediction endpoint (requires authentication and rate limiting)
-@app.post(
-    "/predict",
-    response_model=PredictionResponse,
-    tags=["Prediction"],
-    summary="Predict ASL Sign",
-    description="""
-    Predict ASL letter from smart glove sensor data.
-    
-    **Authentication Required:** Include `X-API-Key` header with your API key.
-    
-    **Rate Limit:** 100 requests per minute per IP address.
-    
-    ## Input Format
-    
-    Send 5 flex sensor readings (one per finger). You can send either:
-    
-    ### Windowed Data (Recommended)
-    Multiple samples for better accuracy:
-    ```json
-    {
-      "flex_sensors": [
-        [512, 678, 345, 890, 234],
-        [510, 680, 344, 891, 235],
-        [511, 679, 346, 892, 236]
-      ],
-      "device_id": "my-glove"
-    }
-    ```
-    
-    ### Single Sample (Quick Mode)
-    One sample for faster response:
-    ```json
-    {
-      "flex_sensors": [512, 678, 345, 890, 234],
-      "device_id": "my-glove"
-    }
-    ```
-    
-    ## Output
-    
-    Returns:
-    - **letter**: Predicted ASL letter (A-Y, 15 letters total)
-    - **confidence**: Score from 0-1 (higher is better)
-    - **all_probabilities**: Confidence for all possible letters
-    - **processing_time_ms**: How long the prediction took
-    - **model_name**: Which ML model was used
-    
-    ## Tips
-    
-    - Send **100-150 samples** (2-3 seconds at 50Hz) for best accuracy
-    - Ensure sensors are **calibrated** properly
-    - Check **confidence score** - values >0.8 are very reliable
-    
-    ## Example Usage
-    
-    ```python
-    import requests
-    
-    headers = {"X-API-Key": "your-api-key-here"}
-    
-    response = requests.post(
-        "https://api.ybilgin.com/predict",
-        json={
-            "flex_sensors": [[512, 678, 345, 890, 234]],
-            "device_id": "glove-001"
-        },
-        headers=headers
-    )
-    
-    result = response.json()
-    print(f"Letter: {result['letter']}")
-    print(f"Confidence: {result['confidence']:.2%}")
-    ```
-    """,
-    responses={
-        200: {
-            "description": "Successful prediction",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "letter": "A",
-                        "confidence": 0.92,
-                        "all_probabilities": {
-                            "A": 0.92,
-                            "S": 0.04,
-                            "B": 0.02,
-                            "C": 0.01
-                        },
-                        "processing_time_ms": 23.5,
-                        "model_name": "rf_asl_15letters",
-                        "timestamp": 1708268123.456
-                    }
-                }
-            }
-        },
-        401: {
-            "description": "Missing API key",
-            "content": {
-                "application/json": {
-                    "example": {"detail": "Missing API Key. Include 'X-API-Key' header in your request."}
-                }
-            }
-        },
-        403: {
-            "description": "Invalid API key",
-            "content": {
-                "application/json": {
-                    "example": {"detail": "Invalid API Key"}
-                }
-            }
-        },
-        429: {
-            "description": "Rate limit exceeded",
-            "content": {
-                "application/json": {
-                    "example": {"detail": "Rate limit exceeded. Max 100 requests per minute."}
-                }
-            }
-        },
-        503: {
-            "description": "Model not loaded",
-            "content": {
-                "application/json": {
-                    "example": {"detail": "Model not loaded"}
-                }
-            }
-        }
-    }
-)
-async def predict(
-    sensor_data: SensorData,
-    request: Request,
-    api_key: str = Depends(verify_api_key),
-    rate_limit: dict = Depends(rate_limit_check)
-):
+# Prediction endpoint
+@app.post("/predict", response_model=PredictionResponse)
+async def predict(sensor_data: SensorData):
     """
     Predict ASL letter from sensor data
     
@@ -565,8 +229,8 @@ async def predict(
     
     try:
         # Convert sensor data to numpy array
-        sensor_array = np.array(sensor_data.flex_sensors)
-        
+        sensor_array = np.array(sensor_data.flex_sensors, dtype=np.float64)
+
         # Check if it's windowed data or single sample
         if sensor_array.ndim == 1:
             # Single sample - convert to window with 1 sample
@@ -576,7 +240,10 @@ async def predict(
             pass
         else:
             raise ValueError(f"Invalid sensor data shape: {sensor_array.shape}")
-        
+
+        # Clamp to 0-1 range (app sends normalized values)
+        sensor_array = np.clip(sensor_array, 0.0, 1.0)
+
         # Extract 25 statistical features from the window
         features = extract_features_from_window(sensor_array).reshape(1, -1)
         
@@ -607,6 +274,17 @@ async def predict(
         processing_time = (time.time() - start_time) * 1000  # Convert to ms
         
         # Log prediction to database (async, don't wait)
+        # Store the extracted features (25 values) instead of raw sensor data for consistency
+        app.state.last_prediction = {
+            "letter": str(prediction),
+            "confidence": confidence,
+            "sensor_data": features[0].tolist(),  # Store the 25 features
+            "timestamp": sensor_data.timestamp,
+            "device_id": sensor_data.device_id,
+            "processing_time_ms": processing_time
+        }
+        
+        # Store in background
         pool = await get_db_pool()
         if pool:
             try:
@@ -619,7 +297,7 @@ async def predict(
                         """,
                         str(prediction),
                         confidence,
-                        features[0].tolist(),
+                        features[0].tolist(),  # Store the 25 features
                         sensor_data.device_id,
                         processing_time
                     )
@@ -639,45 +317,9 @@ async def predict(
         logger.error(f"Prediction error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
-# Statistics endpoint (requires authentication)
-@app.get(
-    "/stats",
-    tags=["Analytics"],
-    summary="Get Prediction Statistics",
-    description="""
-    Get analytics about API usage and prediction performance.
-    
-    **Authentication Required:** Include `X-API-Key` header with your API key.
-    
-    Returns statistics for:
-    - Total predictions made
-    - Average confidence (last 24 hours)
-    - Average processing time (last hour)
-    - Most predicted letters (last 24 hours)
-    
-    Useful for monitoring model performance and usage patterns.
-    """,
-    responses={
-        200: {
-            "description": "Statistics retrieved",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "total_predictions": 1523,
-                        "last_24h_avg_confidence": 0.87,
-                        "last_1h_avg_processing_ms": 28.3,
-                        "top_letters_24h": [
-                            {"letter": "A", "count": 45},
-                            {"letter": "S", "count": 38},
-                            {"letter": "B", "count": 32}
-                        ]
-                    }
-                }
-            }
-        }
-    }
-)
-async def get_statistics(api_key: str = Depends(verify_api_key)):
+# Statistics endpoint
+@app.get("/stats")
+async def get_statistics():
     """Get prediction statistics"""
     pool = await get_db_pool()
     if not pool:
@@ -723,38 +365,20 @@ async def get_statistics(api_key: str = Depends(verify_api_key)):
         logger.error(f"Stats error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Root endpoint (no authentication required)
-@app.get(
-    "/",
-    tags=["Info"],
-    summary="API Information",
-    description="""
-    Get basic information about the ASL Recognition API.
-    
-    **Note:** This endpoint does not require authentication.
-    
-    Returns:
-    - Service name and version
-    - Available endpoints
-    - Model status
-    - Authentication status
-    
-    **Tip**: Visit `/docs` for interactive API documentation!
-    """
-)
+# Root endpoint
+@app.get("/")
 async def root():
     """API information"""
     return {
         "service": "ASL ML Inference API",
-        "version": "1.1.0",
+        "version": "1.0.0",
         "status": "operational",
-        "authentication": "enabled" if VALID_API_KEYS and "" not in VALID_API_KEYS else "disabled",
-        "rate_limit": f"{RATE_LIMIT_REQUESTS} requests/minute",
         "endpoints": {
-            "predict": "POST /predict (requires API key)",
+            "predict": "POST /predict",
             "health": "GET /health",
-            "stats": "GET /stats (requires API key)",
+            "stats": "GET /stats",
             "docs": "GET /docs"
         },
         "model": model_manager.model_name if model_manager.model else "not loaded"
     }
+
