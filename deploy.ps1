@@ -70,7 +70,7 @@ try {
 if (-Not $SkipUpload) {
     # Clean up old upload first
     Write-Host "`n[3/7] Cleaning previous upload..." -ForegroundColor Yellow
-    ssh $SERVER "rm -rf /tmp/asl-ml-server /tmp/rf_asl_15letters.pkl"
+    ssh $SERVER "rm -rf /tmp/asl-ml-server /tmp/setup-server.sh /tmp/*.pkl"
     
     # Upload project files
     Write-Host "[3/7] Uploading project files..." -ForegroundColor Yellow
@@ -103,9 +103,11 @@ if (-Not $SkipUpload) {
 Write-Host "`n[5/7] Setting up directories on server..." -ForegroundColor Yellow
 Write-Host "  Note: You'll be prompted for sudo password" -ForegroundColor Yellow
 
-# Combined setup command (one sudo password prompt)
+# Upload the setup script and run it on the server (avoids nested quoting issues)
 $modelFileName = [System.IO.Path]::GetFileName($MODEL_PATH)
-ssh -t $SERVER "echo '  -> Moving files to /opt/stack/'; sudo bash -c 'mv /tmp/asl-ml-server /opt/stack/ 2>/dev/null || true; chown -R bilgin:bilgin /opt/stack/asl-ml-server; echo \"  -> Creating directories\"; mkdir -p /opt/stack/config/asl-ml-api /opt/stack/data/asl-ml-api/logs /opt/stack/data/asl-postgres /opt/stack/ai-models; echo \"  -> Setting permissions\"; chown -R bilgin:bilgin /opt/stack/config/asl-ml-api /opt/stack/data/asl-ml-api /opt/stack/ai-models; if [ -f /tmp/$modelFileName ]; then echo \"  -> Moving model to ai-models/\"; mv /tmp/$modelFileName /opt/stack/ai-models/; chown bilgin:bilgin /opt/stack/ai-models/$modelFileName; fi' && echo '  -> Copying init script' && cp /opt/stack/asl-ml-server/init-db.sql /opt/stack/config/asl-ml-api/"
+scp "$SCRIPT_DIR\setup-server.sh" "${SERVER}:/tmp/setup-server.sh"
+ssh $SERVER "sed -i 's/\r//' /tmp/setup-server.sh"
+ssh -t $SERVER "bash /tmp/setup-server.sh '$modelFileName'"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  [ERROR] Setup failed" -ForegroundColor Red
