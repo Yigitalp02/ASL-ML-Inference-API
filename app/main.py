@@ -90,31 +90,28 @@ async def get_db_pool():
             db_pool = None
     return db_pool
 
-# Feature extraction function (matches training script)
+# Feature extraction function (matches training script exactly)
+# 45 features: mean, std, min, max, range × 9 channels (5 flex + 4 quaternion)
+# Windows with only 5 columns are padded with identity quaternion (1,0,0,0)
+# so the API stays backward-compatible with apps that don't yet send IMU data.
 def extract_features_from_window(window: np.ndarray) -> np.ndarray:
-    """
-    Extract 25 statistical features from a window of sensor samples.
-    For each of the 5 flex sensors, computes: mean, std, min, max, range
+    if window.shape[1] < 9:
+        pad = np.zeros((window.shape[0], 9 - window.shape[1]))
+        pad[:, 0] = 1.0   # qw = 1 (identity quaternion)
+        window = np.hstack([window, pad])
 
-    Args:
-        window: numpy array of shape (n_samples, 5) where n_samples >= 1
-
-    Returns:
-        numpy array of 25 features
-    """
     features = []
-
-    for finger_idx in range(5):
-        finger_values = window[:, finger_idx]
+    for i in range(9):
+        v = window[:, i]
         features.extend([
-            np.mean(finger_values),
-            np.std(finger_values),
-            np.min(finger_values),
-            np.max(finger_values),
-            np.max(finger_values) - np.min(finger_values)  # range
+            float(np.mean(v)),
+            float(np.std(v)),
+            float(np.min(v)),
+            float(np.max(v)),
+            float(np.max(v) - np.min(v)),
         ])
 
-    return np.array(features)
+    return np.array(features, dtype=np.float64)
 
 
 # Request/Response models
@@ -163,18 +160,20 @@ class HealthResponse(BaseModel):
 @app.on_event("startup")
 async def startup_event():
     """Load model on startup"""
-    # Try to load the normalized 96% model first, then fall back to alternatives
-    model_path = os.getenv("MODEL_PATH", "/models/rf_asl_15letters_normalized_96pct_seed1.pkl")
+    # Load best available model — prefer 97% model, fall back to 96%, then legacy
+    model_path = os.getenv("MODEL_PATH", "/models/rf_asl_15letters_normalized_97pct_seed1_feb26.pkl")
 
     if not Path(model_path).exists():
         logger.warning(f"Model not found at {model_path}, trying alternatives...")
         alternative_paths = [
+            "/models/rf_asl_15letters_normalized_96pct_seed1.pkl",
             "/models/rf_asl_15letters_normalized.pkl",
             "/models/rf_asl_15letters.pkl",
+            "/opt/stack/ai-models/rf_asl_15letters_normalized_97pct_seed1_feb26.pkl",
             "/opt/stack/ai-models/rf_asl_15letters_normalized_96pct_seed1.pkl",
             "/opt/stack/ai-models/rf_asl_15letters.pkl",
+            "./models/rf_asl_15letters_normalized_97pct_seed1_feb26.pkl",
             "./models/rf_asl_15letters_normalized_96pct_seed1.pkl",
-            "./models/rf_asl_15letters.pkl"
         ]
         for alt_path in alternative_paths:
             if Path(alt_path).exists():
@@ -248,8 +247,8 @@ async def predict(sensor_data: SensorData):
         features = extract_features_from_window(sensor_array).reshape(1, -1)
         
         # Validate feature count
-        if features.shape[1] != 25:
-            raise ValueError(f"Expected 25 features, got {features.shape[1]}")
+        if features.shape[1] != 45:
+            raise ValueError(f"Expected 45 features, got {features.shape[1]}")
         
         # Get prediction
         prediction = model_manager.model.predict(features)[0]

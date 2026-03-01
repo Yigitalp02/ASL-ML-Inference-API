@@ -37,11 +37,11 @@ try {
 
 $SERVER = "${ServerUser}@${ServerIP}"
 $SCRIPT_DIR = $PSScriptRoot
-# Prefer the preserved 96% normalized model, then fall back to generic normalized, then legacy
+# Prefer 97% model, fall back to 96%, then legacy
+$MODEL_97PCT   = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_15letters_normalized_97pct_seed1_feb26.pkl"
 $MODEL_96PCT   = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_15letters_normalized_96pct_seed1.pkl"
-$NORMALIZED_MODEL = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_15letters_normalized.pkl"
 $LEGACY_MODEL  = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_15letters.pkl"
-$MODEL_PATH = if (Test-Path $MODEL_96PCT) { $MODEL_96PCT } elseif (Test-Path $NORMALIZED_MODEL) { $NORMALIZED_MODEL } else { $LEGACY_MODEL }
+$MODEL_PATH = if (Test-Path $MODEL_97PCT) { $MODEL_97PCT } elseif (Test-Path $MODEL_96PCT) { $MODEL_96PCT } else { $LEGACY_MODEL }
 
 Write-Host "[1/7] Checking prerequisites..." -ForegroundColor Yellow
 
