@@ -160,20 +160,22 @@ class HealthResponse(BaseModel):
 @app.on_event("startup")
 async def startup_event():
     """Load model on startup"""
-    # Load best available model — prefer 97% model, fall back to 96%, then legacy
-    model_path = os.getenv("MODEL_PATH", "/models/rf_asl_15letters_normalized_97pct_seed1_feb26.pkl")
+    # Load best available model — prefer 21-letter IMU model, fall back to old 15-letter models
+    model_path = os.getenv("MODEL_PATH", "/models/rf_asl_21letters_imu.pkl")
 
     if not Path(model_path).exists():
         logger.warning(f"Model not found at {model_path}, trying alternatives...")
         alternative_paths = [
+            "/models/rf_asl_21letters_imu.pkl",
+            "/opt/stack/ai-models/rf_asl_21letters_imu.pkl",
+            "/models/rf_asl_15letters_normalized_97pct_45feat_seed1_feb26.pkl",
+            "/models/rf_asl_15letters_normalized_97pct_seed1_feb26.pkl",
             "/models/rf_asl_15letters_normalized_96pct_seed1.pkl",
             "/models/rf_asl_15letters_normalized.pkl",
             "/models/rf_asl_15letters.pkl",
             "/opt/stack/ai-models/rf_asl_15letters_normalized_97pct_seed1_feb26.pkl",
             "/opt/stack/ai-models/rf_asl_15letters_normalized_96pct_seed1.pkl",
             "/opt/stack/ai-models/rf_asl_15letters.pkl",
-            "./models/rf_asl_15letters_normalized_97pct_seed1_feb26.pkl",
-            "./models/rf_asl_15letters_normalized_96pct_seed1.pkl",
         ]
         for alt_path in alternative_paths:
             if Path(alt_path).exists():

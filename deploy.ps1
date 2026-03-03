@@ -37,11 +37,17 @@ try {
 
 $SERVER = "${ServerUser}@${ServerIP}"
 $SCRIPT_DIR = $PSScriptRoot
-# Prefer 97% model, fall back to 96%, then legacy
-$MODEL_97PCT   = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_15letters_normalized_97pct_seed1_feb26.pkl"
+# Prefer 21-letter IMU model, fall back to old 15-letter models
+$MODEL_21L     = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_21letters_imu.pkl"
+$MODEL_97PCT   = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_15letters_normalized_97pct_45feat_seed1_feb26.pkl"
+$MODEL_97PCT2  = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_15letters_normalized_97pct_seed1_feb26.pkl"
 $MODEL_96PCT   = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_15letters_normalized_96pct_seed1.pkl"
 $LEGACY_MODEL  = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_15letters.pkl"
-$MODEL_PATH = if (Test-Path $MODEL_97PCT) { $MODEL_97PCT } elseif (Test-Path $MODEL_96PCT) { $MODEL_96PCT } else { $LEGACY_MODEL }
+$MODEL_PATH = if     (Test-Path $MODEL_21L)   { $MODEL_21L   } `
+              elseif (Test-Path $MODEL_97PCT)  { $MODEL_97PCT  } `
+              elseif (Test-Path $MODEL_97PCT2) { $MODEL_97PCT2 } `
+              elseif (Test-Path $MODEL_96PCT)  { $MODEL_96PCT  } `
+              else                             { $LEGACY_MODEL }
 
 Write-Host "[1/7] Checking prerequisites..." -ForegroundColor Yellow
 
@@ -114,6 +120,12 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 Write-Host "  [OK] Setup complete" -ForegroundColor Green
+
+# Update MODEL_PATH in docker-compose on the server
+$modelFileName = [System.IO.Path]::GetFileName($MODEL_PATH)
+Write-Host "`n[5b/7] Updating MODEL_PATH in docker-compose to $modelFileName..." -ForegroundColor Yellow
+ssh $SERVER "sed -i 's|MODEL_PATH=.*|MODEL_PATH=/models/$modelFileName|g' /opt/stack/docker-compose.yml && grep MODEL_PATH /opt/stack/docker-compose.yml"
+Write-Host "  [OK] MODEL_PATH updated" -ForegroundColor Green
 
 # Build and start containers
 Write-Host "`n[6/7] Building and starting containers..." -ForegroundColor Yellow
