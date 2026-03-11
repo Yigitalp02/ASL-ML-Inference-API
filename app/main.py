@@ -90,27 +90,76 @@ async def get_db_pool():
             db_pool = None
     return db_pool
 
-# Feature extraction function (matches training script exactly)
-# 45 features: mean, std, min, max, range × 9 channels (5 flex + 4 quaternion)
-# Windows with only 5 columns are padded with identity quaternion (1,0,0,0)
-# so the API stays backward-compatible with apps that don't yet send IMU data.
+# ── Feature extraction ────────────────────────────────────────────────────────
+# Supports three model formats in priority order:
+#   v2_gravity_cascade : Stage1=25 flex features, Stage2=6 gravity features
+#   two-stage (prof)   : Stage1=25 flex features, Stage2=29 flex+mean(IMU)
+#   legacy single      : 45 features (5 stats x 9 channels)
+
+def _safe_stats(v: np.ndarray):
+    v = v[~np.isnan(v)].astype(float)
+    if len(v) == 0:
+        return 0.0, 0.0, 0.0, 0.0, 0.0
+    return (float(np.mean(v)),
+            float(np.std(v)) if len(v) >= 2 else 0.0,
+            float(np.min(v)),
+            float(np.max(v)),
+            float(np.max(v) - np.min(v)) if len(v) > 1 else 0.0)
+
+def extract_flex_features(window: np.ndarray) -> np.ndarray:
+    """25 features — flex channels 0-4 only. IMU ignored."""
+    feats = []
+    for i in range(5):
+        feats.extend(_safe_stats(window[:, i]))
+    return np.array(feats, dtype=np.float64)
+
+def extract_gravity_features(window: np.ndarray) -> np.ndarray:
+    """6 yaw-invariant gravity features for v2 Stage 2.
+    fwd_z   = 2*(qx*qz + qw*qy)   — fingers up/down tilt
+    up_z    = 1 - 2*(qx^2 + qy^2) — back-of-hand up/down tilt
+    right_z = 2*(qy*qz - qw*qx)   — wrist roll (P vs Q vs L)
+    """
+    if window.shape[1] >= 9:
+        qw = window[:, 5].astype(float)
+        qx = window[:, 6].astype(float)
+        qy = window[:, 7].astype(float)
+        qz = window[:, 8].astype(float)
+    else:
+        qw = np.ones(len(window))
+        qx = qy = qz = np.zeros(len(window))
+    fwd_z   = 2.0 * (qx * qz + qw * qy)
+    up_z    = 1.0 - 2.0 * (qx**2 + qy**2)
+    right_z = 2.0 * (qy * qz - qw * qx)
+    return np.array([
+        float(np.mean(fwd_z)),   float(np.std(fwd_z)),
+        float(np.mean(up_z)),    float(np.std(up_z)),
+        float(np.mean(right_z)), float(np.std(right_z)),
+    ], dtype=np.float64)
+
+def extract_stage2_features(window: np.ndarray) -> np.ndarray:
+    """29 features — 25 flex + mean(qw,qx,qy,qz). Used by professor's format."""
+    feats = list(extract_flex_features(window))
+    if window.shape[1] >= 9:
+        for i in range(5, 9):
+            v = window[:, i].astype(float)
+            v = v[~np.isnan(v)]
+            feats.append(float(np.mean(v)) if len(v) > 0 else (1.0 if i == 5 else 0.0))
+    else:
+        feats.extend([1.0, 0.0, 0.0, 0.0])
+    return np.array(feats, dtype=np.float64)
+
 def extract_features_from_window(window: np.ndarray) -> np.ndarray:
+    """Legacy: 45 features (5 stats x 9 channels). Backward-compatible."""
     if window.shape[1] < 9:
         pad = np.zeros((window.shape[0], 9 - window.shape[1]))
-        pad[:, 0] = 1.0   # qw = 1 (identity quaternion)
+        pad[:, 0] = 1.0
         window = np.hstack([window, pad])
-
     features = []
     for i in range(9):
         v = window[:, i]
-        features.extend([
-            float(np.mean(v)),
-            float(np.std(v)),
-            float(np.min(v)),
-            float(np.max(v)),
-            float(np.max(v) - np.min(v)),
-        ])
-
+        features.extend([float(np.mean(v)), float(np.std(v)),
+                         float(np.min(v)),  float(np.max(v)),
+                         float(np.max(v) - np.min(v))])
     return np.array(features, dtype=np.float64)
 
 
@@ -121,18 +170,24 @@ class SensorData(BaseModel):
     Can accept either:
     1. A window of samples (preferred, for best accuracy): List[List[float]]
     2. A single sample (quick mode): List[float]
+    imu: optional current quaternion [w, x, y, z] for v2 Stage 2 disambiguation.
     """
     flex_sensors: Union[List[List[float]], List[float]] = Field(
         ...,
-        description="Normalized sensor readings (0=straight, 1=fully bent). Either [[f1,f2,f3,f4,f5], ...] for windowed data, or [f1,f2,f3,f4,f5] for single sample"
+        description="Normalized sensor readings. Either [[f1..f5], ...] for windowed or [f1..f5] for single sample."
+    )
+    imu: Optional[List[float]] = Field(
+        default=None,
+        description="Current IMU quaternion [w, x, y, z] — used by v2 model for orientation disambiguation."
     )
     timestamp: Optional[float] = Field(default_factory=time.time)
     device_id: Optional[str] = Field(default="desktop-app", description="Source device identifier")
-    
+
     class Config:
         json_schema_extra = {
             "example": {
                 "flex_sensors": [[0.02, 0.68, 0.78, 0.65, 0.68], [0.02, 0.69, 0.77, 0.64, 0.67]],
+                "imu": [1.0, 0.0, 0.0, 0.0],
                 "timestamp": 1234567890.123,
                 "device_id": "glove-001"
             }
@@ -166,6 +221,8 @@ async def startup_event():
     if not Path(model_path).exists():
         logger.warning(f"Model not found at {model_path}, trying alternatives...")
         alternative_paths = [
+            "/models/rf_asl_v2_gravity_cascade.pkl",
+            "/opt/stack/ai-models/rf_asl_v2_gravity_cascade.pkl",
             "/models/rf_asl_21letters_imu.pkl",
             "/opt/stack/ai-models/rf_asl_21letters_imu.pkl",
             "/models/rf_asl_15letters_normalized_97pct_45feat_seed1_feb26.pkl",
@@ -245,60 +302,98 @@ async def predict(sensor_data: SensorData):
         # Clamp to 0-1 range (app sends normalized values)
         sensor_array = np.clip(sensor_array, 0.0, 1.0)
 
-        # Extract 25 statistical features from the window
-        features = extract_features_from_window(sensor_array).reshape(1, -1)
-        
-        # Validate feature count
-        if features.shape[1] != 45:
-            raise ValueError(f"Expected 45 features, got {features.shape[1]}")
-        
-        # Get prediction
-        prediction = model_manager.model.predict(features)[0]
-        
-        # Get probabilities if available
-        if hasattr(model_manager.model, 'predict_proba'):
-            probabilities = model_manager.model.predict_proba(features)[0]
-            classes = model_manager.model.classes_
-            
-            # Create probability dictionary
-            prob_dict = {
-                str(cls): float(prob) 
-                for cls, prob in zip(classes, probabilities)
-            }
-            
-            # Get confidence (max probability)
-            confidence = float(max(probabilities))
+        # If IMU quaternion was sent, append it as columns so feature
+        # extractors can read it from cols 5-8.
+        if sensor_data.imu and len(sensor_data.imu) == 4:
+            imu_cols = np.tile(sensor_data.imu, (sensor_array.shape[0], 1))
+            sensor_array = np.hstack([sensor_array, imu_cols])
+
+        model = model_manager.model
+        prediction = None
+        prob_dict  = {}
+        confidence = 0.0
+
+        # ── v2 gravity cascade ────────────────────────────────────────────────
+        if isinstance(model, dict) and model.get("format") == "v2_gravity_cascade":
+            s1   = model["stage_1_model"]
+            f1   = extract_flex_features(sensor_array).reshape(1, -1)
+            probs1 = s1.predict_proba(f1)[0]
+            prediction = str(s1.predict(f1)[0])
+            confidence = float(max(probs1))
+            prob_dict  = {str(c): float(p) for c, p in zip(s1.classes_, probs1)}
+
+            families  = model.get("families", {})
+            s2_models = model.get("stage_2_models", {})
+            fg = extract_gravity_features(sensor_array).reshape(1, -1)
+            for fam_name, members in families.items():
+                if prediction in members and fam_name in s2_models:
+                    clf   = s2_models[fam_name]
+                    p2    = clf.predict_proba(fg)[0]
+                    prediction = str(clf.predict(fg)[0])
+                    confidence = float(max(p2))
+                    for c, p in zip(clf.classes_, p2):
+                        prob_dict[str(c)] = float(p)
+                    break
+
+        # ── professor's two-stage cascade ─────────────────────────────────────
+        elif isinstance(model, dict) and "stage_1_model" in model:
+            s1 = model["stage_1_model"]
+            f1 = extract_flex_features(sensor_array).reshape(1, -1)
+            f2 = extract_stage2_features(sensor_array).reshape(1, -1)
+            probs1 = s1.predict_proba(f1)[0]
+            prediction = str(s1.predict(f1)[0])
+            confidence = float(max(probs1))
+            prob_dict  = {str(c): float(p) for c, p in zip(s1.classes_, probs1)}
+
+            if "disamb_dgq" in model:
+                for clf_key in ("disamb_dgq", "disamb_kp"):
+                    clf = model.get(clf_key)
+                    if clf and prediction in [str(c) for c in clf.classes_]:
+                        p2 = clf.predict_proba(f2)[0]
+                        prediction = str(clf.predict(f2)[0])
+                        confidence = float(max(p2))
+                        for c, p in zip(clf.classes_, p2):
+                            prob_dict[str(c)] = float(p)
+                        break
+            elif "stage_2_model" in model:
+                triggers = model.get("imu_trigger_letters") or model.get("trigger_letters", [])
+                if prediction in triggers:
+                    clf = model["stage_2_model"]
+                    p2  = clf.predict_proba(f2)[0]
+                    prediction = str(clf.predict(f2)[0])
+                    confidence = float(max(p2))
+                    for c, p in zip(clf.classes_, p2):
+                        prob_dict[str(c)] = float(p)
+
+        # ── legacy single model (45 features) ─────────────────────────────────
         else:
-            prob_dict = {str(prediction): 1.0}
-            confidence = 1.0
+            features = extract_features_from_window(sensor_array).reshape(1, -1)
+            prediction = str(model.predict(features)[0])
+            if hasattr(model, "predict_proba"):
+                probs = model.predict_proba(features)[0]
+                prob_dict  = {str(c): float(p) for c, p in zip(model.classes_, probs)}
+                confidence = float(max(probs))
+            else:
+                prob_dict  = {str(prediction): 1.0}
+                confidence = 1.0
         
         processing_time = (time.time() - start_time) * 1000  # Convert to ms
-        
-        # Log prediction to database (async, don't wait)
-        # Store the extracted features (25 values) instead of raw sensor data for consistency
-        app.state.last_prediction = {
-            "letter": str(prediction),
-            "confidence": confidence,
-            "sensor_data": features[0].tolist(),  # Store the 25 features
-            "timestamp": sensor_data.timestamp,
-            "device_id": sensor_data.device_id,
-            "processing_time_ms": processing_time
-        }
-        
-        # Store in background
+
+        # Store in background (store flex features for DB — always 25 values)
+        flex_feats = extract_flex_features(sensor_array).tolist()
         pool = await get_db_pool()
         if pool:
             try:
                 async with pool.acquire() as conn:
                     await conn.execute(
                         """
-                        INSERT INTO predictions 
+                        INSERT INTO predictions
                         (letter, confidence, sensor_data, device_id, processing_time_ms, predicted_at)
                         VALUES ($1, $2, $3, $4, $5, NOW())
                         """,
                         str(prediction),
                         confidence,
-                        features[0].tolist(),  # Store the 25 features
+                        flex_feats,
                         sensor_data.device_id,
                         processing_time
                     )
