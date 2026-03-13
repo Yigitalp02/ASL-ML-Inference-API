@@ -54,6 +54,8 @@ class ModelManager:
             self.model_name = Path(model_path).stem
             self.loaded_at = datetime.now()
             logger.info(f"Model loaded: {self.model_name}")
+            if isinstance(self.model, dict):
+                logger.info(f"  Model format: dict — keys: {list(self.model.keys())}")
             return True
         except Exception as e:
             logger.error(f"Failed to load model: {e}")
@@ -221,6 +223,8 @@ async def startup_event():
     if not Path(model_path).exists():
         logger.warning(f"Model not found at {model_path}, trying alternatives...")
         alternative_paths = [
+            "/models/rf_asl_v3_collapsed.pkl",
+            "/opt/stack/ai-models/rf_asl_v3_collapsed.pkl",
             "/models/rf_asl_v2_gravity_cascade.pkl",
             "/opt/stack/ai-models/rf_asl_v2_gravity_cascade.pkl",
             "/models/rf_asl_21letters_imu.pkl",
@@ -313,8 +317,36 @@ async def predict(sensor_data: SensorData):
         prob_dict  = {}
         confidence = 0.0
 
+        # ── v3 collapsed Stage 1 + gravity cascade ────────────────────────────
+        # Stage 1 outputs collapsed super-labels ("DG", "VHR", "LPQ") or plain
+        # letters. Super-labels are fed to Stage 2 for gravity-based resolution.
+        if isinstance(model, dict) and (
+            model.get("format") == "v3_collapsed_stage1"
+            or "family_label_map" in model
+        ):
+            s1      = model["stage_1_model"]
+            f1      = extract_flex_features(sensor_array).reshape(1, -1)
+            probs1  = s1.predict_proba(f1)[0]
+            prediction = str(s1.predict(f1)[0])
+            confidence = float(max(probs1))
+            prob_dict  = {str(c): float(p) for c, p in zip(s1.classes_, probs1)}
+
+            s2_models = model.get("stage_2_models", {})
+            if prediction in s2_models:
+                fg  = extract_gravity_features(sensor_array).reshape(1, -1)
+                clf = s2_models[prediction]
+                p2  = clf.predict_proba(fg)[0]
+                prediction = str(clf.predict(fg)[0])
+                confidence = float(max(p2))
+                for c, p in zip(clf.classes_, p2):
+                    prob_dict[str(c)] = float(p)
+
         # ── v2 gravity cascade ────────────────────────────────────────────────
-        if isinstance(model, dict) and model.get("format") == "v2_gravity_cascade":
+        # v3 check above must run first — v3 also has "stage_2_models"/"families".
+        elif isinstance(model, dict) and (
+            model.get("format") == "v2_gravity_cascade"
+            or ("stage_2_models" in model and "families" in model)
+        ):
             s1   = model["stage_1_model"]
             f1   = extract_flex_features(sensor_array).reshape(1, -1)
             probs1 = s1.predict_proba(f1)[0]
