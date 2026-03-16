@@ -1,0 +1,8 @@
+feat: add v3 collapsed Stage 1 model format support
+
+Detect and run v3_collapsed_stage1 model format ahead of v2 in the
+prediction pipeline. Stage 1 outputs super-labels (DG, VHR, LPQ)
+which are dispatched directly to Stage 2 gravity classifiers, avoiding
+the v2 issue where Stage 1 attempted impossible flex-only separation
+of orientation-identical letter families. Also add v3 model path to
+the startup fallback search list.
