@@ -218,7 +218,7 @@ class HealthResponse(BaseModel):
 async def startup_event():
     """Load model on startup"""
     # Load best available model — prefer 21-letter IMU model, fall back to old 15-letter models
-    model_path = os.getenv("MODEL_PATH", "/models/rf_asl_21letters_imu.pkl")
+    model_path = os.getenv("MODEL_PATH", "/models/rf_asl_v3_collapsed.pkl")
 
     if not Path(model_path).exists():
         logger.warning(f"Model not found at {model_path}, trying alternatives...")

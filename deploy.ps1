@@ -37,14 +37,16 @@ try {
 
 $SERVER = "${ServerUser}@${ServerIP}"
 $SCRIPT_DIR = $PSScriptRoot
-# Priority: v2 gravity cascade -> 21-letter IMU -> 15-letter fallbacks
+# Priority: v3 collapsed -> v2 gravity cascade -> 21-letter IMU -> 15-letter fallbacks
+$MODEL_V3      = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_v3_collapsed.pkl"
 $MODEL_V2      = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_v2_gravity_cascade.pkl"
 $MODEL_21L     = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_21letters_imu.pkl"
 $MODEL_97PCT   = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_15letters_normalized_97pct_45feat_seed1_feb26.pkl"
 $MODEL_97PCT2  = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_15letters_normalized_97pct_seed1_feb26.pkl"
 $MODEL_96PCT   = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_15letters_normalized_96pct_seed1.pkl"
 $LEGACY_MODEL  = Join-Path $SCRIPT_DIR "..\iot-sign-glove\models\rf_asl_15letters.pkl"
-$MODEL_PATH = if     (Test-Path $MODEL_V2)    { $MODEL_V2    } `
+$MODEL_PATH = if     (Test-Path $MODEL_V3)    { $MODEL_V3    } `
+              elseif (Test-Path $MODEL_V2)    { $MODEL_V2    } `
               elseif (Test-Path $MODEL_21L)   { $MODEL_21L   } `
               elseif (Test-Path $MODEL_97PCT)  { $MODEL_97PCT  } `
               elseif (Test-Path $MODEL_97PCT2) { $MODEL_97PCT2 } `
