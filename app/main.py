@@ -397,6 +397,35 @@ async def predict(sensor_data: SensorData):
                     for c, p in zip(clf.classes_, p2):
                         prob_dict[str(c)] = float(p)
 
+        # ── unknown dict format — scan for any usable estimator ──────────────
+        elif isinstance(model, dict):
+            logger.error(f"Unrecognised dict model format. Keys: {list(model.keys())}")
+            clf = None
+            for key in ("stage_1_model", "stage1_model", "stage1", "model", "clf"):
+                if key in model and hasattr(model[key], "predict"):
+                    clf = model[key]
+                    logger.warning(f"Falling back to model['{key}'] for prediction")
+                    break
+            if clf is None:
+                for val in model.values():
+                    if hasattr(val, "predict"):
+                        clf = val
+                        logger.warning("Falling back to first estimator found in dict")
+                        break
+            if clf is None:
+                raise ValueError(
+                    f"Cannot predict: unknown dict model format. Keys: {list(model.keys())}"
+                )
+            features = extract_flex_features(sensor_array).reshape(1, -1)
+            prediction = str(clf.predict(features)[0])
+            if hasattr(clf, "predict_proba"):
+                probs = clf.predict_proba(features)[0]
+                prob_dict  = {str(c): float(p) for c, p in zip(clf.classes_, probs)}
+                confidence = float(max(probs))
+            else:
+                prob_dict  = {str(prediction): 1.0}
+                confidence = 1.0
+
         # ── legacy single model (45 features) ─────────────────────────────────
         else:
             features = extract_features_from_window(sensor_array).reshape(1, -1)
