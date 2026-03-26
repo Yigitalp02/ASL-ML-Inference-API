@@ -93,7 +93,8 @@ async def get_db_pool():
     return db_pool
 
 # ── Feature extraction ────────────────────────────────────────────────────────
-# Supports three model formats in priority order:
+# Supports model formats in priority order:
+#   v4_flex_rules      : flex-only RF + deterministic IMU nearest-centroid rules
 #   v2_gravity_cascade : Stage1=25 flex features, Stage2=6 gravity features
 #   two-stage (prof)   : Stage1=25 flex features, Stage2=29 flex+mean(IMU)
 #   legacy single      : 45 features (5 stats x 9 channels)
@@ -223,6 +224,8 @@ async def startup_event():
     if not Path(model_path).exists():
         logger.warning(f"Model not found at {model_path}, trying alternatives...")
         alternative_paths = [
+            "/models/rf_asl_v4_flex_rules.pkl",
+            "/opt/stack/ai-models/rf_asl_v4_flex_rules.pkl",
             "/models/rf_asl_v3_collapsed.pkl",
             "/opt/stack/ai-models/rf_asl_v3_collapsed.pkl",
             "/models/rf_asl_v2_gravity_cascade.pkl",
@@ -316,6 +319,88 @@ async def predict(sensor_data: SensorData):
         prediction = None
         prob_dict  = {}
         confidence = 0.0
+
+        # ── v4 flex-only + hardcoded directional IMU rules ───────────────────
+        # flex_model gives a coarse letter. If it lands in an ambiguous family
+        # (DG / VHR / LPQ) the live fwd_z value decides orientation:
+        #   fwd_z > fwd_up  → fingers point UP   (D, V, L)
+        #   fwd_z < fwd_dn  → fingers point DOWN  (P, Q)
+        #   in between      → fingers point SIDEWAYS (G, H)
+        # right_z separates P from Q when both are pointing down.
+        if isinstance(model, dict) and model.get("format") == "v4_flex_rules":
+            flex_clf = model["flex_model"]
+            f1       = extract_flex_features(sensor_array).reshape(1, -1)
+            probs1   = flex_clf.predict_proba(f1)[0]
+            prediction = str(flex_clf.predict(f1)[0])
+            confidence = float(max(probs1))
+            prob_dict  = {str(c): float(p) for c, p in zip(flex_clf.classes_, probs1)}
+
+            imu_rules = model.get("imu_rules", {})
+            if imu_rules and sensor_array.shape[1] >= 9:
+                qw = float(np.mean(sensor_array[:, 5]))
+                qx = float(np.mean(sensor_array[:, 6]))
+                qy = float(np.mean(sensor_array[:, 7]))
+                qz = float(np.mean(sensor_array[:, 8]))
+                fwd_z   = 2.0 * (qx * qz + qw * qy)
+                up_z    = 1.0 - 2.0 * (qx**2 + qy**2)
+
+                fwd_up     = imu_rules.get("fwd_up_thresh",       0.30)
+                fwd_dn     = imu_rules.get("fwd_dn_thresh",      -0.20)
+                up_palm_dn = imu_rules.get("up_palm_down_thresh",  0.40)
+
+                # 2D grid: fwd_z (finger direction) × up_z (palm direction)
+                if prediction in ("D", "G"):
+                    # D is the DEFAULT — valid in many orientations (fingers up, forward, etc.).
+                    # G is the EXCEPTION with a very specific signature:
+                    #   fingers pointing sideways → fwd_z is HIGH POSITIVE (≈ +0.85)
+                    #   palm facing toward you    → up_z is NEGATIVE or near-zero (≈ -0.14)
+                    #
+                    # Measured thresholds from real glove data:
+                    #   D (fingers forward, palm down): fwd_z=+0.40, up_z=+0.91
+                    #   D (fingers up,      palm fwd) : fwd_z=-0.84, up_z=+0.53
+                    #   G (fingers right,   palm→you) : fwd_z=+0.85, up_z=-0.14
+                    #
+                    # Rule: G only when fwd_z > 0.65  AND  up_z < 0.20
+                    # All D orientations have up_z > 0.50 — well above the threshold.
+                    g_detected = (fwd_z > 0.65) and (up_z < 0.20)
+                    prediction = "G" if g_detected else "D"
+
+                elif prediction in ("V", "H", "R"):
+                    # V is DEFAULT — valid when fingers are up or forward (up_z always positive).
+                    # H and R are detected by high fwd_z (fingers NOT pointing up/forward).
+                    #
+                    # Measured thresholds from real glove data:
+                    #   V (fingers fwd,  palm down):  fwd_z=+0.136, up_z=+0.970
+                    #   V (fingers up,   palm fwd) :  fwd_z=-0.934, up_z=+0.228
+                    #   R (fingers down, palm→me)  :  fwd_z=+0.928, up_z=-0.356
+                    #   H (fingers right,palm→me)  :  fwd_z=+0.995, up_z=-0.032
+                    #
+                    # Decision tree:
+                    #   fwd_z > 0.80 → non-V orientation
+                    #     up_z < -0.20 → R  (fingers down, up_z clearly negative)
+                    #     up_z ≥ -0.20 → H  (fingers sideways, up_z near zero)
+                    #   fwd_z ≤ 0.80 → V  (safe margin: V max fwd_z = +0.136)
+                    if fwd_z > 0.80:
+                        prediction = "R" if up_z < -0.20 else "H"
+                    else:
+                        prediction = "V"
+
+                elif prediction in ("L", "P", "Q"):
+                    # Measured thresholds from real glove data:
+                    #   L (fingers up,   palm fwd) : fwd_z=-0.921, up_z=+0.302
+                    #   P (fingers fwd,  palm down): fwd_z=+0.222, up_z=+0.961
+                    #   Q (fingers down, palm→me)  : fwd_z=+0.844, up_z=-0.214
+                    #
+                    # Decision tree (gaps are very large — clean separation):
+                    #   fwd_z < -0.50 → L  (fingers pointing up; L is at -0.921, P is at +0.222)
+                    #   fwd_z > +0.55 → Q  (fingers pointing down; Q is at +0.844, P is at +0.222)
+                    #   else          → P  (default: fingers forward, palm down, moderate fwd_z)
+                    if fwd_z < -0.50:
+                        prediction = "L"
+                    elif fwd_z > 0.55:
+                        prediction = "Q"
+                    else:
+                        prediction = "P"
 
         # ── v3 collapsed Stage 1 + gravity cascade ────────────────────────────
         # Stage 1 outputs collapsed super-labels ("DG", "VHR", "LPQ") or plain

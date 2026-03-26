@@ -1,8 +1,23 @@
-feat: add v3 collapsed Stage 1 model format support
+Add v4 flex-only model support with calibrated IMU disambiguation rules
 
-Detect and run v3_collapsed_stage1 model format ahead of v2 in the
-prediction pipeline. Stage 1 outputs super-labels (DG, VHR, LPQ)
-which are dispatched directly to Stage 2 gravity classifiers, avoiding
-the v2 issue where Stage 1 attempted impossible flex-only separation
-of orientation-identical letter families. Also add v3 model path to
-the startup fallback search list.
+Implement the v4_flex_rules model format in the /predict endpoint.
+Stage 1 is a flex-only Random Forest (25 features). Stage 2 applies
+physics-based quaternion rules to resolve the three ambiguous families.
+All thresholds were calibrated from real glove quaternion samples and
+are yaw-invariant (the user can face any direction).
+
+DG family:
+  G only when fwd_z > 0.65 AND up_z < 0.20; all other orientations -> D
+  D(fingers fwd, palm down): fwd_z=+0.40, up_z=+0.91
+  D(fingers up,  palm fwd) : fwd_z=-0.84, up_z=+0.53
+  G(fingers sideways)      : fwd_z=+0.85, up_z=-0.14
+
+VHR family:
+  fwd_z > 0.80 -> R (if up_z < -0.20) else H; fwd_z <= 0.80 -> V
+  V(fwd)  fwd_z=+0.14  V(up) fwd_z=-0.93
+  R       fwd_z=+0.93, up_z=-0.36
+  H       fwd_z=+0.995, up_z=-0.03
+
+LPQ family:
+  fwd_z < -0.50 -> L; fwd_z > +0.55 -> Q; else -> P
+  L fwd_z=-0.921  P fwd_z=+0.222  Q fwd_z=+0.844
